@@ -1,0 +1,301 @@
+/* ============================================================
+   SwayRift 博客 — 全局主题：Ember Editorial
+   暖黑底色 × 单一高饱和橙色 × 衬线标题 × 噪点与渐变光晕
+   ============================================================ */
+
+:root {
+  /* 色彩 */
+  --bg: #0a0807;
+  --bg-soft: #120e0b;
+  --card: #161009;
+  --line: rgba(255, 235, 214, 0.08);
+  --line-strong: rgba(255, 235, 214, 0.18);
+  --text: #f2e9dd;
+  --muted: #a99a8a;
+  --faint: #6f6357;
+  --orange: #ff7a1a;
+  --orange-hi: #ffa24d;
+  --orange-deep: #e04e00;
+  --grad: linear-gradient(120deg, #ffc46b 0%, #ff7a1a 45%, #ff4d00 100%);
+  --grad-soft: linear-gradient(120deg, rgba(255, 196, 107, 0.14), rgba(255, 77, 0, 0.14));
+
+  /* 字体 */
+  --font-serif: 'Noto Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
+  --font-sans: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Code', Consolas, monospace;
+
+  /* 布局 */
+  --nav-h: 64px;
+  --content-w: 1100px;
+  --read-w: 780px;
+  --radius: 14px;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+::selection {
+  background: rgba(255, 122, 26, 0.35);
+  color: #fff;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid var(--orange);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/* 滚动条 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+::-webkit-scrollbar-thumb {
+  background: #2c241d;
+  border-radius: 8px;
+  border: 2px solid var(--bg);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #4a3421;
+}
+
+/* ---------- 布局工具 ---------- */
+
+.container {
+  width: min(var(--content-w), 100% - 48px);
+  margin-inline: auto;
+}
+
+.container-read {
+  width: min(var(--read-w), 100% - 48px);
+  margin-inline: auto;
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--orange);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.eyebrow::before {
+  content: '';
+  width: 26px;
+  height: 1px;
+  background: var(--grad);
+}
+
+.grad-text {
+  background: var(--grad);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: grad-shift 6s ease-in-out infinite alternate;
+}
+
+@keyframes grad-shift {
+  from { background-position: 0% 50%; }
+  to { background-position: 100% 50%; }
+}
+
+/* ---------- 按钮 ---------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 26px;
+  border-radius: 999px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  border: 1px solid transparent;
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease, background 0.25s ease;
+}
+
+.btn-primary {
+  background: var(--grad);
+  color: #1c0d02;
+  font-weight: 700;
+  box-shadow: 0 10px 30px -12px rgba(255, 122, 26, 0.55);
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 16px 38px -12px rgba(255, 122, 26, 0.7);
+}
+
+.btn-ghost {
+  border-color: var(--line-strong);
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.btn-ghost:hover {
+  border-color: rgba(255, 122, 26, 0.6);
+  color: var(--orange-hi);
+  transform: translateY(-2px);
+}
+
+/* ---------- 标签 chip ---------- */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  color: var(--muted);
+  transition: all 0.25s ease;
+}
+
+.chip-hot {
+  border-color: rgba(255, 122, 26, 0.55);
+  color: var(--orange-hi);
+  background: rgba(255, 122, 26, 0.08);
+}
+
+/* ---------- 入场动效 ---------- */
+
+/* 挂载即播放的入场动画（用于首屏内容，直接写 class="reveal" 即可） */
+.reveal {
+  animation: reveal-up 0.75s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  animation-delay: var(--reveal-delay, 0ms);
+}
+
+/* 滚动入场（由 v-reveal 指令添加）：先隐藏，进入视口后切换到 .reveal-in 播放 */
+.reveal-scroll {
+  opacity: 0;
+  transform: translateY(26px);
+}
+
+.reveal-in {
+  animation: reveal-up 0.75s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+  animation-delay: var(--reveal-delay, 0ms);
+}
+
+@keyframes reveal-up {
+  from {
+    opacity: 0;
+    transform: translateY(26px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal,
+  .reveal-scroll,
+  .reveal-in {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* 路由切换过渡 */
+.page-enter-active {
+  transition: opacity 0.4s ease, transform 0.4s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.page-leave-active {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.page-enter-from {
+  opacity: 0;
+  transform: translateY(20px);
+}
+.page-leave-to {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+/* ---------- 状态提示 ---------- */
+
+.notice {
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  padding: 40px 24px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.notice-error {
+  border-color: rgba(255, 90, 60, 0.4);
+  color: #ff9a80;
+}
+
+/* 呼吸圆点 */
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.dot-on {
+  background: var(--orange);
+  box-shadow: 0 0 0 0 rgba(255, 122, 26, 0.6);
+  animation: pulse 2.2s ease-out infinite;
+}
+
+.dot-off {
+  background: var(--faint);
+}
+
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(255, 122, 26, 0.55); }
+  70% { box-shadow: 0 0 0 9px rgba(255, 122, 26, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 122, 26, 0); }
+}
+
+/* ---------- 响应式 ---------- */
+
+@media (max-width: 720px) {
+  body {
+    font-size: 15px;
+  }
+  .container,
+  .container-read {
+    width: calc(100% - 36px);
+  }
+}

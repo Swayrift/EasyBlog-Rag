@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 运行时数据（SQLite、Milvus Lite）
+data/
+*.db
+
+# 含密钥的配置文件
+config.ini
+
+# 环境
+.env

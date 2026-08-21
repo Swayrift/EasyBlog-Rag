@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+backend/venv/
+backend/.venv/
+
+# 运行时数据
+backend/data/
+*.db
+
+# 含密钥的配置
+backend/config.ini
+
+# 前端
+node_modules/
+dist/
+
+# 编辑器 / 系统
+.idea/
+.vscode/
+.DS_Store
