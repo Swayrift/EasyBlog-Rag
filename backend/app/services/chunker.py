@@ -61,7 +61,7 @@ def _group_sentences(
     sentences: list[str],
     boundaries: set[int],
     chunk_size: int,
-    min_chunk_size: int = 100
+    min_chunk_size: int = 200
 ) -> list[str]:
     """按语义边界组装 chunk。"""
     if chunk_size < min_chunk_size + 50:

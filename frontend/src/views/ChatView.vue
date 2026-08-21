@@ -72,6 +72,7 @@ async function send(text) {
     const res = await api.chat(history)
     pending.content = res.answer
     pending.sources = res.sources || []
+    pending.expanded = pending.sources.map(() => false)
     resolveSlugs(pending.sources)
   } catch (err) {
     pending.error = err.message
@@ -80,6 +81,10 @@ async function send(text) {
     busy.value = false
     scrollToBottom()
   }
+}
+
+function toggleSource(message, index) {
+  message.expanded[index] = !message.expanded[index]
 }
 
 function onKeydown(event) {
@@ -190,6 +195,13 @@ onMounted(async () => {
                       v-for="(source, si) in message.sources"
                       :key="si"
                       class="source-card"
+                      :class="{ expanded: message.expanded[si] }"
+                      role="button"
+                      tabindex="0"
+                      :aria-expanded="!!message.expanded[si]"
+                      @click="toggleSource(message, si)"
+                      @keydown.enter.prevent="toggleSource(message, si)"
+                      @keydown.space.prevent="toggleSource(message, si)"
                     >
                       <div class="source-head">
                         <span class="source-type">
@@ -205,12 +217,34 @@ onMounted(async () => {
                           </span>
                           {{ scorePercent(source.score) }}
                         </span>
+                        <span class="source-toggle" aria-hidden="true">
+                          <svg
+                            class="source-chevron"
+                            :class="{ open: message.expanded[si] }"
+                            viewBox="0 0 16 16"
+                            width="12"
+                            height="12"
+                          >
+                            <path
+                              d="M4 6l4 4 4-4"
+                              fill="none"
+                              stroke="currentColor"
+                              stroke-width="2"
+                              stroke-linecap="round"
+                              stroke-linejoin="round"
+                            />
+                          </svg>
+                          {{ message.expanded[si] ? '收起' : '展开' }}
+                        </span>
                       </div>
-                      <p class="source-chunk">{{ source.chunk }}</p>
+                      <p v-if="message.expanded[si]" class="source-chunk">
+                        {{ source.chunk }}
+                      </p>
                       <RouterLink
                         v-if="source.source_type === 'post' && slugs[source.source_id]"
                         :to="`/posts/${slugs[source.source_id]}`"
                         class="source-link"
+                        @click.stop
                       >
                         查看原文 →
                       </RouterLink>
@@ -480,7 +514,9 @@ onMounted(async () => {
   border-radius: 12px;
   background: rgba(255, 122, 26, 0.04);
   padding: 12px 16px;
+  cursor: pointer;
   transition: border-color 0.25s ease;
+  user-select: none;
 }
 
 .source-card + .source-card {
@@ -489,6 +525,11 @@ onMounted(async () => {
 
 .source-card:hover {
   border-color: rgba(255, 122, 26, 0.4);
+}
+
+.source-card.expanded {
+  border-color: rgba(255, 122, 26, 0.55);
+  background: rgba(255, 122, 26, 0.07);
 }
 
 .source-head {
@@ -538,15 +579,44 @@ onMounted(async () => {
   border-radius: 4px;
 }
 
+.source-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  color: var(--orange-hi);
+  white-space: nowrap;
+}
+
+.source-chevron {
+  transition: transform 0.25s ease;
+}
+
+.source-chevron.open {
+  transform: rotate(180deg);
+}
+
 .source-chunk {
   margin-top: 8px;
   font-size: 0.82rem;
   color: var(--muted);
   line-height: 1.75;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+  animation: chunk-in 0.25s ease;
+}
+
+@keyframes chunk-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .source-link {

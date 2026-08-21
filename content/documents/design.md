@@ -227,7 +227,6 @@ Blog/
 │   │   ├── schemas/
 │   │   └── services/
 │   ├── scripts/
-│   │   └── sync_knowledge.py
 │   ├── data/                 # 运行期数据：blog.db、milvus.db（不入库）
 │   ├── config.ini            # 实际配置（含密钥，不入库）
 │   ├── config.example.ini
