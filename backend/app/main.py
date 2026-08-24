@@ -20,6 +20,7 @@ from app.services.embedding import BaseEmbedder, SiliconFlowEmbedder
 from app.services.importer import sync_knowledge
 from app.services.llm import LLMClient
 from app.services.milvus_store import MilvusVectorStore, VectorStore
+from app.services.qa_cache import QaCacheService
 from app.services.rag import RAGService
 from app.services.reranker import BaseReranker, SiliconFlowReranker
 
@@ -94,6 +95,9 @@ async def lifespan(app: FastAPI):
 
     _run_initial_import(settings, engine, vector_store, embedder)
 
+    qa_cache = QaCacheService(settings=settings, engine=engine, embedder=embedder)
+    qa_cache.load()
+
     rag = RAGService(
         settings=settings,
         engine=engine,
@@ -101,6 +105,7 @@ async def lifespan(app: FastAPI):
         embedder=embedder,
         reranker=reranker,
         llm=llm,
+        qa_cache=qa_cache,
     )
     app.state.ctx = AppContext(
         settings=settings,

@@ -1,9 +1,9 @@
-"""RAG 问答编排：查询改写 → 向量检索 → 重排去重 → 组装上下文 → LLM 生成。"""
+"""RAG 问答编排：缓存命中 → 查询改写 → 向量检索 → 重排去重 → 组装上下文 → LLM 生成。"""
 
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
 from sqlmodel import Session, select
 
@@ -12,9 +12,17 @@ from app.models.db_models import Chunk, Document, Post
 from app.services.embedding import BaseEmbedder
 from app.services.llm import LLMClient
 from app.services.milvus_store import VectorStore
+from app.services.qa_cache import QaCacheService
 from app.services.reranker import BaseReranker
 
 logger = logging.getLogger(__name__)
+
+
+_FALLBACK_ANSWERS = {
+    "知识库中没有检索到相关内容，暂时无法回答这个问题。",
+    "LLM 未配置，仅返回检索到的相关片段，请查看引用来源。",
+    "回答生成失败，请稍后重试。以下为检索到的相关片段，可参考引用来源。",
+}
 
 
 @dataclass
@@ -41,6 +49,7 @@ class RAGService:
         embedder: BaseEmbedder | None,
         reranker: BaseReranker | None,
         llm: LLMClient,
+        qa_cache: QaCacheService | None = None,
     ):
         self._settings = settings
         self._engine = engine
@@ -48,6 +57,7 @@ class RAGService:
         self._embedder = embedder
         self._reranker = reranker
         self._llm = llm
+        self._qa_cache = qa_cache
 
     def _extract_question(self, messages: list[dict]) -> str:
         for message in reversed(messages):
@@ -79,6 +89,11 @@ class RAGService:
     def chat(self, messages: list[dict]) -> ChatResult:
         question = self._extract_question(messages)
 
+        # 阶段一：问答缓存命中
+        cached = self._match_cache(question)
+        if cached is not None:
+            return cached
+
         # 1. 查询改写（失败时退回原始问题）
         rewritten = self._llm.rewrite_query(messages)
         query = rewritten or question
@@ -90,16 +105,21 @@ class RAGService:
         if not candidates:
             return ChatResult(answer="知识库中没有检索到相关内容，暂时无法回答这个问题。", sources=[])
 
-        # 3. 重排与去重
+        # 3. 重排与去重（按 source_type + source_id + chunk_index 剔除冗余）
         texts = [chunk.content for chunk in candidates]
+        ordered: list[tuple[Chunk, float]] = []
         if self._reranker is not None:
             results = self._reranker.rerank(query, texts, self._settings.rerank_top_n)
-            ordered = []
-            seen: set[int] = set()
+            seen: set[tuple[str, int, int]] = set()
             for result in results:
-                if 0 <= result.index < len(candidates) and result.index not in seen:
-                    seen.add(result.index)
-                    ordered.append((candidates[result.index], result.score))
+                if not (0 <= result.index < len(candidates)):
+                    continue
+                chunk = candidates[result.index]
+                key = (chunk.source_type, chunk.source_id, chunk.chunk_index)
+                if key in seen:
+                    continue
+                seen.add(key)
+                ordered.append((chunk, result.score))
         else:
             ordered = [(chunk, 0.0) for chunk in candidates[: self._settings.rerank_top_n]]
 
@@ -129,4 +149,53 @@ class RAGService:
                 logger.exception("LLM 生成回答失败")
                 answer = "回答生成失败，请稍后重试。以下为检索到的相关片段，可参考引用来源。"
 
+        result = ChatResult(answer=answer, sources=sources)
+
+        # 6. 写入问答缓存
+        self._maybe_store_cache(question, result)
+        return result
+
+    def _match_cache(self, question: str) -> ChatResult | None:
+        """阶段一：内存索引按余弦相似度匹配缓存，命中后回库读取答案与来源。"""
+        if self._qa_cache is None or self._embedder is None:
+            return None
+        try:
+            self._qa_cache.prune_expired()
+        except Exception:  # noqa: BLE001
+            logger.warning("清理过期缓存失败", exc_info=True)
+        try:
+            query_vector = self._embedder.embed([question])[0]
+        except Exception:  # noqa: BLE001
+            logger.warning("缓存匹配向量化失败，跳过缓存", exc_info=True)
+            return None
+        hit = self._qa_cache.match(query_vector)
+        if hit is None:
+            return None
+        cache_id, score = hit
+        answer, source_dicts = self._qa_cache.get_answer_sources(cache_id)
+        sources: list[ChatSource] = []
+        for item in source_dicts:
+            if isinstance(item, dict):
+                try:
+                    sources.append(ChatSource(**item))
+                except TypeError:
+                    continue
+        logger.info("问答缓存命中：%s（score=%.4f）", question, score)
         return ChatResult(answer=answer, sources=sources)
+
+    def _maybe_store_cache(self, question: str, result: ChatResult) -> None:
+        """阶段二结束：满足可缓存条件时写入缓存并同步内存索引。"""
+        if self._qa_cache is None or self._embedder is None:
+            return
+        if not result.sources:
+            return
+        if max((s.score for s in result.sources), default=0.0) < self._settings.qa_min_score:
+            return
+        if result.answer in _FALLBACK_ANSWERS:
+            return
+        try:
+            query_vector = self._embedder.embed([question])[0]
+            source_dicts = [asdict(s) for s in result.sources]
+            self._qa_cache.store(question, result.answer, source_dicts, query_vector)
+        except Exception:  # noqa: BLE001
+            logger.warning("写入问答缓存失败", exc_info=True)

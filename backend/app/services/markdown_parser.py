@@ -55,3 +55,12 @@ def normalize_tags(value) -> list[str]:
     else:
         return []
     return [item.strip() for item in items if str(item).strip()]
+
+
+def extract_first_heading(text: str) -> str | None:
+    """提取正文首个一级标题（ATX `# xxx`）文本，无则返回 None。"""
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("# "):
+            return stripped[2:].strip()
+    return None

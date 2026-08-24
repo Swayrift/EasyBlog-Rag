@@ -20,7 +20,7 @@ class VectorRecord:
     embedding: list[float]
     source_type: str
     source_id: int
-    title: str
+    chunk_index: int
 
 
 @dataclass
@@ -29,7 +29,7 @@ class VectorHit:
     score: float
     source_type: str
     source_id: int
-    title: str
+    chunk_index: int
 
 
 class VectorStore(abc.ABC):
@@ -78,8 +78,7 @@ class MilvusVectorStore(VectorStore):
         schema.add_field("embedding", DataType.FLOAT_VECTOR, dim=dim)
         schema.add_field("source_type", DataType.VARCHAR, max_length=32)
         schema.add_field("source_id", DataType.INT64)
-        schema.add_field("chunk_id", DataType.INT64)
-        schema.add_field("title", DataType.VARCHAR, max_length=512)
+        schema.add_field("chunk_index", DataType.INT64)
 
         index_params = self._client.prepare_index_params()
         index_params.add_index(
@@ -96,11 +95,10 @@ class MilvusVectorStore(VectorStore):
         rows = [
             {
                 "id": record.id,
-                "chunk_id": record.id,
                 "embedding": record.embedding,
                 "source_type": record.source_type,
                 "source_id": record.source_id,
-                "title": record.title[:500],
+                "chunk_index": record.chunk_index,
             }
             for record in records
         ]
@@ -120,7 +118,7 @@ class MilvusVectorStore(VectorStore):
             data=[vector],
             anns_field="embedding",
             limit=top_k,
-            output_fields=["source_type", "source_id", "title"],
+            output_fields=["source_type", "source_id", "chunk_index"],
             search_params={"metric_type": "IP"},
         )
         hits: list[VectorHit] = []
@@ -132,7 +130,7 @@ class MilvusVectorStore(VectorStore):
                     score=float(hit["distance"]),
                     source_type=entity.get("source_type", ""),
                     source_id=int(entity.get("source_id", 0)),
-                    title=entity.get("title", ""),
+                    chunk_index=int(entity.get("chunk_index", 0)),
                 )
             )
         return hits

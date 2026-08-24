@@ -33,6 +33,7 @@ class Post(SQLModel, table=True):
     content_md: str = ""
     status: str = Field(default="published", index=True)  # published / draft
     file_path: str = Field(default="", index=True)  # 相对 content/ 的源文件路径
+    file_hash: str = Field(default="")  # 源文件内容的 SHA-256 哈希
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
 
@@ -56,9 +57,7 @@ class Document(SQLModel, table=True):
     file_name: str
     title: str = ""
     file_path: str = Field(index=True, unique=True)
-    file_type: str = "md"
     file_hash: str = ""
-    status: str = Field(default="active", index=True)  # active / removed
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
 
@@ -76,3 +75,19 @@ class Chunk(SQLModel, table=True):
     chunk_index: int = 0
     content: str = ""
     milvus_id: str = ""
+
+
+class QaCache(SQLModel, table=True):
+    """问答缓存：仅由 RAG 生成、固定有效期，缓存「问题 + 答案 + 引用来源」。"""
+
+    __tablename__ = "qa_cache"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    question: str
+    answer: str = ""
+    sources: str = "[]"  # JSON 数组，结构与 /api/chat 响应 sources 一致
+    question_vector: str = "[]"  # JSON 数组（1024 维），启动时载入内存用于相似度匹配
+    status: str = Field(default="active", index=True)  # active / invalidated
+    expires_at: datetime = Field(default_factory=datetime.now)
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)

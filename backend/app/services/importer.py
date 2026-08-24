@@ -17,7 +17,7 @@ from app.core.config import Settings
 from app.models.db_models import Chunk, Document, Post, PostTag, Tag
 from app.services.chunker import split_text
 from app.services.embedding import BaseEmbedder
-from app.services.markdown_parser import normalize_tags, parse_datetime, parse_markdown
+from app.services.markdown_parser import extract_first_heading, normalize_tags, parse_datetime, parse_markdown
 from app.services.milvus_store import VectorRecord, VectorStore
 
 logger = logging.getLogger(__name__)
@@ -93,7 +93,7 @@ def _rebuild_chunks(
                     embedding=vector,
                     source_type=source_type,
                     source_id=source_id,
-                    title=title,
+                    chunk_index=index,
                 )
             ]
         )
@@ -107,7 +107,9 @@ def _sync_post(
     path: Path,
     settings: Settings,
 ) -> str:
-    parsed = parse_markdown(path.read_text(encoding="utf-8"))
+    raw = path.read_bytes()
+    file_hash = hashlib.sha256(raw).hexdigest()
+    parsed = parse_markdown(raw.decode("utf-8"))
     meta = parsed.meta
     title = str(meta.get("title") or path.stem)
     slug = str(meta.get("slug") or _slugify(path.stem))
@@ -125,14 +127,14 @@ def _sync_post(
         session.flush()
 
     body = parsed.body
-    content_hash = hashlib.sha256(body.encode("utf-8")).hexdigest()
-    changed = post.content_md != body or post.title != title or post.summary != summary
+    changed = post.file_hash != file_hash
 
     post.title = title
     post.summary = summary
     post.content_md = body
     post.status = status
     post.file_path = path.relative_to(settings.posts_dir).as_posix()
+    post.file_hash = file_hash
 
     for link in session.exec(select(PostTag).where(PostTag.post_id == post.id)).all():
         session.delete(link)
@@ -146,7 +148,7 @@ def _sync_post(
         _rebuild_chunks(vector_store, embedder, session, "post", post.id, post.title, body, settings)
     else:
         logger.debug("文章未变更，跳过：%s", slug)
-    logger.info("同步文章：%s（%s）", title, content_hash[:8])
+    logger.info("同步文章：%s（%s）", title, file_hash[:8])
     return slug
 
 
@@ -161,18 +163,17 @@ def _sync_document(
     raw = path.read_bytes()
     file_hash = hashlib.sha256(raw).hexdigest()
     parsed = parse_markdown(raw.decode("utf-8"))
-    title = str(parsed.meta.get("title") or path.stem)
+    title = extract_first_heading(parsed.body) or path.stem
 
     doc = session.exec(select(Document).where(Document.file_path == rel_path)).first()
     if doc is None:
-        doc = Document(file_name=path.name, title=title, file_path=rel_path, file_type=path.suffix.lstrip("."))
+        doc = Document(file_name=path.name, title=title, file_path=rel_path)
         session.add(doc)
         session.flush()
 
     changed = doc.file_hash != file_hash or doc.title != title
     doc.title = title
     doc.file_hash = file_hash
-    doc.status = "active"
 
     if changed or not session.exec(
         select(Chunk).where(Chunk.source_type == "document", Chunk.source_id == doc.id).limit(1)
@@ -218,12 +219,11 @@ def sync_knowledge(
                 except Exception:  # noqa: BLE001
                     logger.exception("同步文档失败：%s", path)
 
-        # 清理已删除的文档记录与向量
-        for doc in session.exec(select(Document).where(Document.status == "active")).all():
+        # 清理已删除的文档记录与向量（真删除）
+        for doc in session.exec(select(Document)).all():
             if doc.file_path not in seen_doc_paths:
                 _delete_source_vectors(vector_store, session, "document", doc.id)
-                doc.status = "removed"
-                session.add(doc)
+                session.delete(doc)
                 logger.info("文档已删除，清理：%s", doc.file_path)
 
         session.commit()
