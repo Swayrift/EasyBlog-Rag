@@ -1,10 +1,10 @@
 ---
 title: 关于这个博客
 slug: about-this-blog
-summary: 这是博客的第一篇文章，介绍这个站点的由来。
+summary: 介绍这个站点的由来。
 tags: [随笔]
 status: published
-created_at: 2026-08-19 10:00:00
+created_at: 2026-07-19 10:00:00
 ---
 
 欢迎来到我的博客。这个站点用于记录我的技术学习与日常思考，内容以后端开发、检索增强生成（RAG）和个人知识管理为主。

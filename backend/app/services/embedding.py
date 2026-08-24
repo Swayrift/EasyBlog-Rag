@@ -40,11 +40,11 @@ class SiliconFlowEmbedder(BaseEmbedder):
         base_url: str = "https://api.siliconflow.cn",
         batch_size: int = 16,
         batch_sleep: float = 0.5,
-        timeout: float = 60.0,
+        timeout: float = 80.0,
     ):
         self.model = model
         self.batch_size = max(1, batch_size)
-        self.batch_sleep = max(0.0, batch_sleep)
+        self.batch_sleep = max(0.1, batch_sleep)
         self._client = build_client(api_key, base_url, timeout)
 
     def embed(self, texts: list[str]) -> list[list[float]]:

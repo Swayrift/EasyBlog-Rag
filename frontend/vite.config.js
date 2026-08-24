@@ -15,6 +15,7 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5173,
+    allowedHosts: ['frp-can.com'],
     proxy: {
       // 开发环境将 /api 请求代理到 FastAPI 后端
       '/api': {

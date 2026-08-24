@@ -1,14 +1,14 @@
 ---
-name: SuLy
-summary: 后端开发者，关注 Python 大模型、检索增强生成与个人知识管理。
+name: SuiLi
+summary: 专注AI自然语言处理，代码工程化，个人知识管理。
 tech_stack:
   - Python / FastAPI
   - Vue 3 / Vite
-  - SQLite / SQLModel
-  - Milvus Lite
+  - MySQL
+  - Milvus
   - BGE-M3 / BGE-Reranker
 contact:
-  email: hi@swayrift.top
+  email: 239771248@qq.com
   github: https://github.com/swayrift
 ---
 

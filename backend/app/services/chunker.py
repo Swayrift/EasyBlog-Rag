@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 def _split_sentences(text: str) -> list[str]:
     """按句号切分句子，句号保留在句末"""
     sentences: list[str] = []
-    for piece in re.split(r'(?<=[。.！？!?])', text):
+    for piece in re.split(r'(?<=[。！？；!?;])', text):
         sentence = re.sub(r"\s+", " ", piece).strip()
         if sentence:
             sentences.append(sentence)

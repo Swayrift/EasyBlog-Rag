@@ -266,7 +266,7 @@ onMounted(async () => {
           v-model="input"
           class="chat-input"
           rows="1"
-          placeholder="输入你的问题，Enter 发送，Shift+Enter 换行"
+          placeholder="输入你的问题"
           @keydown="onKeydown"
           @input="autoGrow"
         ></textarea>
