@@ -55,6 +55,7 @@ python -m scripts.sync_knowledge
 | content | 文章、本地文档、关于我文件的位置 |
 | import | chunk 最小/最大字符数与语义边界相似度下降阈值、embedding 批大小与批间隔（免费档限流保护） |
 | retrieval | 向量召回 top_k、重排保留 rerank_top_n |
+| qa_cache | 问答缓存：命中阈值 similarity_threshold、有效期 cache_ttl（秒）、可缓存最低重排得分 min_score |
 | siliconflow | API Key、模型名（BAAI/bge-m3、BAAI/bge-reranker-v2-m3） |
 | openai | OpenAI 兼容接口（当前配置为 DeepSeek）：base_url、API Key、模型、温度；api_key 留空则问答只返回检索片段 |
 
@@ -77,9 +78,9 @@ python -m scripts.sync_knowledge
 ## 内容管理
 
 - 文章：放入 `../content/posts/`，front matter 支持 `title / slug / summary / tags / status / created_at`。
-- 本地文档：放入 `../content/documents/`，front matter 可选 `title`。
+- 本地文档：放入 `../content/documents/`，不带 front matter，自动取首个一级标题为标题（无则回退文件名）。
 - 关于我：`../content/about.md`，front matter 支持 `name / summary / tech_stack / contact`。
-- 每次启动自动增量同步：内容未变跳过，变化则重建向量，磁盘删除则清理记录与向量。
+- 每次启动自动增量同步：按文件哈希判断是否变更，未变跳过，变化则重建向量，磁盘删除则真删除记录与向量。
 
 ## 目录结构
 

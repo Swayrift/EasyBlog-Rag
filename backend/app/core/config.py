@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import configparser
 from dataclasses import dataclass
+import os
 from pathlib import Path
 
 # backend/ 目录（app/core/config.py -> app/core -> app -> backend）
@@ -84,7 +85,7 @@ def load_settings(config_path: Path | None = None) -> Settings:
     def get(section: str, option: str, fallback: str = "") -> str:
         return parser.get(section, option, fallback=fallback).strip()
 
-    return Settings(
+    settings = Settings(
         title=get("app", "title", "个人博客"),
         host=get("app", "host", "127.0.0.1"),
         port=parser.getint("app", "port", fallback=8000),
@@ -116,3 +117,12 @@ def load_settings(config_path: Path | None = None) -> Settings:
         llm_model=get("openai", "model", "gpt-4o-mini"),
         llm_temperature=parser.getfloat("openai", "temperature", fallback=0.3),
     )
+
+    # --- 环境变量覆盖（优先级高于配置文件） ---
+    # OpenAI API Key
+    env_openai_key = os.environ.get("OPENAI_API_KEY")
+    if env_openai_key:
+        from dataclasses import replace
+        settings = replace(settings, openai_api_key=env_openai_key)
+
+    return settings

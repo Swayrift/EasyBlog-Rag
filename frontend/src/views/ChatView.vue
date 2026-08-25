@@ -8,7 +8,9 @@ import { useChatStore } from '@/stores/chat'
 const chatStore = useChatStore()
 const { messages } = storeToRefs(chatStore)
 const input = ref('')
-const busy = computed(() => chatStore.hasPendingMessage)
+const streamStatus = ref('')
+const streaming = ref(false)
+const busy = computed(() => streaming.value || chatStore.hasPendingMessage)
 const health = ref(null)
 const threadEl = ref(null)
 const inputEl = ref(null)
@@ -34,6 +36,10 @@ function scrollToBottom() {
       threadEl.value.scrollTop = threadEl.value.scrollHeight
     }
   })
+}
+
+function waitForPaint() {
+  return new Promise((resolve) => requestAnimationFrame(resolve))
 }
 
 async function resolveSlugs(sources) {
@@ -68,7 +74,10 @@ async function send(text) {
   input.value = ''
   resetInputHeight()
   chatStore.addUserMessage(content)
-  const pendingIndex = chatStore.addAssistantMessage()
+  let pendingIndex = null
+  let streamError = ''
+  streaming.value = true
+  streamStatus.value = ''
   scrollToBottom()
 
   try {
@@ -76,13 +85,44 @@ async function send(text) {
       .filter((m) => !m.loading && !m.error && m.content)
       .slice(-20)
       .map((m) => ({ role: m.role, content: m.content }))
-    const res = await api.chat(history)
-    chatStore.completeAssistantMessage(pendingIndex, res.answer, res.sources || [])
-    resolveSlugs(res.sources || [])
+    await api.chatStream(history, async (event) => {
+      if (event.type === 'stage') {
+        streamStatus.value = event.label || ''
+        scrollToBottom()
+        if (streamStatus.value) {
+          await nextTick()
+          await waitForPaint()
+        }
+        return
+      }
+      if (event.type === 'delta') {
+        if (pendingIndex === null) pendingIndex = chatStore.addAssistantMessage()
+        chatStore.appendAssistantMessage(pendingIndex, event.content || '')
+        scrollToBottom()
+        return
+      }
+      if (event.type === 'sources') {
+        if (pendingIndex === null) pendingIndex = chatStore.addAssistantMessage()
+        chatStore.setAssistantSources(pendingIndex, event.sources || [])
+        resolveSlugs(event.sources || [])
+        return
+      }
+      if (event.type === 'error') {
+        streamError = event.message || '问答服务暂时不可用'
+        return
+      }
+      if (event.type === 'done') {
+        streamStatus.value = ''
+      }
+    })
+    if (streamError) throw new Error(streamError)
   } catch (err) {
+    if (pendingIndex === null) pendingIndex = chatStore.addAssistantMessage()
     chatStore.failAssistantMessage(pendingIndex, err.message)
   } finally {
-    chatStore.finishAssistantMessage(pendingIndex)
+    if (pendingIndex !== null) chatStore.finishAssistantMessage(pendingIndex)
+    streaming.value = false
+    streamStatus.value = ''
     scrollToBottom()
   }
 }
@@ -185,80 +225,79 @@ onMounted(async () => {
 
             <!-- 助手消息 -->
             <div v-else class="msg-bot">
-              <div v-if="message.loading" class="typing" aria-label="正在思考">
-                <span></span><span></span><span></span>
-              </div>
+              <p v-if="message.error" class="msg-error">出错了：{{ message.error }}</p>
               <template v-else>
-                <p v-if="message.error" class="msg-error">出错了：{{ message.error }}</p>
-                <template v-else>
-                  <MarkdownView :source="message.content" />
+                <MarkdownView :source="message.content" />
 
-                  <div v-if="message.sources && message.sources.length" class="sources">
-                    <p class="sources-title">引用来源 · {{ message.sources.length }}</p>
-                    <div
-                      v-for="(source, si) in message.sources"
-                      :key="si"
-                      class="source-card"
-                      :class="{ expanded: message.expanded[si] }"
-                      role="button"
-                      tabindex="0"
-                      :aria-expanded="!!message.expanded[si]"
-                      @click="toggleSource(i, si)"
-                      @keydown.enter.prevent="toggleSource(i, si)"
-                      @keydown.space.prevent="toggleSource(i, si)"
-                    >
-                      <div class="source-head">
-                        <span class="source-type">
-                          {{ source.source_type === 'post' ? '文章' : '文档' }}
+                <div v-if="message.sources && message.sources.length" class="sources">
+                  <p class="sources-title">引用来源 · {{ message.sources.length }}</p>
+                  <div
+                    v-for="(source, si) in message.sources"
+                    :key="si"
+                    class="source-card"
+                    :class="{ expanded: message.expanded[si] }"
+                    role="button"
+                    tabindex="0"
+                    :aria-expanded="!!message.expanded[si]"
+                    @click="toggleSource(i, si)"
+                    @keydown.enter.prevent="toggleSource(i, si)"
+                    @keydown.space.prevent="toggleSource(i, si)"
+                  >
+                    <div class="source-head">
+                      <span class="source-type">
+                        {{ source.source_type === 'post' ? '文章' : '文档' }}
+                      </span>
+                      <span class="source-title">{{ source.title }}</span>
+                      <span class="source-score">
+                        <span class="source-score-bar">
+                          <span
+                            class="source-score-fill"
+                            :style="{ width: scorePercent(source.score) }"
+                          ></span>
                         </span>
-                        <span class="source-title">{{ source.title }}</span>
-                        <span class="source-score">
-                          <span class="source-score-bar">
-                            <span
-                              class="source-score-fill"
-                              :style="{ width: scorePercent(source.score) }"
-                            ></span>
-                          </span>
-                          {{ scorePercent(source.score) }}
-                        </span>
-                        <span class="source-toggle" aria-hidden="true">
-                          <svg
-                            class="source-chevron"
-                            :class="{ open: message.expanded[si] }"
-                            viewBox="0 0 16 16"
-                            width="12"
-                            height="12"
-                          >
-                            <path
-                              d="M4 6l4 4 4-4"
-                              fill="none"
-                              stroke="currentColor"
-                              stroke-width="2"
-                              stroke-linecap="round"
-                              stroke-linejoin="round"
-                            />
-                          </svg>
-                          {{ message.expanded[si] ? '收起' : '展开' }}
-                        </span>
-                      </div>
-                      <p v-if="message.expanded[si]" class="source-chunk">
-                        {{ source.chunk }}
-                      </p>
-                      <RouterLink
-                        v-if="source.source_type === 'post' && slugs[source.source_id]"
-                        :to="`/posts/${slugs[source.source_id]}`"
-                        class="source-link"
-                        @click.stop
-                      >
-                        查看原文 →
-                      </RouterLink>
+                        {{ scorePercent(source.score) }}
+                      </span>
+                      <span class="source-toggle" aria-hidden="true">
+                        <svg
+                          class="source-chevron"
+                          :class="{ open: message.expanded[si] }"
+                          viewBox="0 0 16 16"
+                          width="12"
+                          height="12"
+                        >
+                          <path
+                            d="M4 6l4 4 4-4"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          />
+                        </svg>
+                        {{ message.expanded[si] ? '收起' : '展开' }}
+                      </span>
                     </div>
+                    <p v-if="message.expanded[si]" class="source-chunk">
+                      {{ source.chunk }}
+                    </p>
+                    <RouterLink
+                      v-if="source.source_type === 'post' && slugs[source.source_id]"
+                      :to="`/posts/${slugs[source.source_id]}`"
+                      class="source-link"
+                      @click.stop
+                    >
+                      查看原文 →
+                    </RouterLink>
                   </div>
-                </template>
+                </div>
               </template>
             </div>
           </div>
         </template>
+
+        <p v-if="streamStatus" class="chat-stage" role="status" aria-live="polite">
+          {{ streamStatus }}
+        </p>
       </div>
     </div>
 
@@ -351,6 +390,16 @@ onMounted(async () => {
   max-width: 860px;
 }
 
+.chat-stage {
+  align-self: flex-start;
+  color: var(--orange-hi);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  min-height: 1.5em;
+  text-align: left;
+}
+
 /* 空状态 */
 .chat-empty {
   margin: auto;
@@ -440,42 +489,6 @@ onMounted(async () => {
 .msg-error {
   color: #ff9a80;
   font-size: 0.9rem;
-}
-
-/* 正在思考 */
-.typing {
-  display: inline-flex;
-  gap: 6px;
-  padding: 4px 2px;
-}
-
-.typing span {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--orange);
-  animation: typing-bounce 1.2s ease-in-out infinite;
-}
-
-.typing span:nth-child(2) {
-  animation-delay: 0.15s;
-}
-
-.typing span:nth-child(3) {
-  animation-delay: 0.3s;
-}
-
-@keyframes typing-bounce {
-  0%,
-  60%,
-  100% {
-    transform: translateY(0);
-    opacity: 0.4;
-  }
-  30% {
-    transform: translateY(-6px);
-    opacity: 1;
-  }
 }
 
 /* 引用来源 */

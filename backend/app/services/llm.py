@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
 
 from openai import OpenAI
 
@@ -57,16 +58,37 @@ class LLMClient:
 
     def generate_answer(self, question: str, contexts: list[tuple[str, str]]) -> str:
         """生成回答。contexts: [(来源标题, 片段内容), ...]，失败时抛出异常。"""
+        completion = self._client.chat.completions.create(
+            model=self.model,
+            messages=self._answer_messages(question, contexts),
+            temperature=self.temperature,
+        )
+        return (completion.choices[0].message.content or "").strip()
+
+    def stream_answer(self, question: str, contexts: list[tuple[str, str]]) -> Iterator[str]:
+        """以增量文本返回回答，供 SSE 接口转发给前端。"""
+        if not self.available:
+            return
+        completion = self._client.chat.completions.create(
+            model=self.model,
+            messages=self._answer_messages(question, contexts),
+            temperature=self.temperature,
+            stream=True,
+        )
+        for chunk in completion:
+            if not chunk.choices:
+                continue
+            content = chunk.choices[0].delta.content or ""
+            if content:
+                yield content
+
+    @staticmethod
+    def _answer_messages(question: str, contexts: list[tuple[str, str]]) -> list[dict]:
         rendered = "\n\n".join(
             f"[{index}] 来源：{title}\n{content}"
             for index, (title, content) in enumerate(contexts, start=1)
         )
-        completion = self._client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": ANSWER_SYSTEM_TEMPLATE.format(contexts=rendered)},
-                {"role": "user", "content": question},
-            ],
-            temperature=self.temperature,
-        )
-        return (completion.choices[0].message.content or "").strip()
+        return [
+            {"role": "system", "content": ANSWER_SYSTEM_TEMPLATE.format(contexts=rendered)},
+            {"role": "user", "content": question},
+        ]

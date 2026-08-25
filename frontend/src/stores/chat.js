@@ -19,11 +19,17 @@ export const useChatStore = defineStore('chat', {
         role: 'assistant',
         content: '',
         sources: [],
-        loading: true,
+        loading: false,
         error: '',
         expanded: [],
       })
       return this.messages.length - 1
+    },
+
+    appendAssistantMessage(index, content) {
+      const message = this.messages[index]
+      if (!message || message.role !== 'assistant') return
+      message.content += content
     },
 
     completeAssistantMessage(index, answer, sources) {
@@ -32,6 +38,14 @@ export const useChatStore = defineStore('chat', {
       message.content = answer
       message.sources = sources || []
       message.expanded = message.sources.map(() => false)
+    },
+
+    setAssistantSources(index, sources) {
+      const message = this.messages[index]
+      if (!message || message.role !== 'assistant') return
+      message.sources = sources || []
+      if (!Array.isArray(message.expanded)) message.expanded = []
+      message.expanded = message.sources.map((_, sourceIndex) => Boolean(message.expanded[sourceIndex]))
     },
 
     failAssistantMessage(index, error) {

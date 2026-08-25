@@ -44,16 +44,16 @@ onMounted(async () => {
       <span class="hero-side-text">记录 · 思考 · 分享</span>
     </div>
 
-    <p class="eyebrow reveal">Backend / RAG / Knowledge</p>
+    <p class="eyebrow reveal">FastAPI / RAG / Vue</p>
 
     <h1 class="hero-title">
-      <span class="reveal" style="--reveal-delay: 90ms">把技术思考，</span><br>
-      <span class="reveal grad-text" style="--reveal-delay: 200ms">沉淀成文字。</span>
+      <span class="reveal" style="--reveal-delay: 90ms">追风赶月莫停留</span><br>
+      <span class="reveal grad-text" style="--reveal-delay: 200ms">平芜尽处是春山</span>
     </h1>
 
     <p class="hero-sub reveal" style="--reveal-delay: 320ms">
-      这里是 SwayRift 的个人博客 —— 记录后端架构、检索增强生成与个人知识管理的实践。
-      站内内置知识库问答，可以直接向我的文章与文档提问。
+      你好啊，我的朋友。我是邃梨，这里是我的个人博客。
+      这个博客用来记录我的所学所想，你可以在这里看到我发布的文章，也可以通过内置的问答系统，向我的知识库提问。
     </p>
 
     <div class="hero-actions reveal" style="--reveal-delay: 430ms">
@@ -78,11 +78,11 @@ onMounted(async () => {
       <div class="intro-badge" aria-hidden="true">SR</div>
       <div class="intro-body">
         <p class="intro-name">
-          {{ about?.name || 'SwayRift' }}
+          {{ about?.name || 'SuiLi' }}
           <span class="intro-role">博客作者</span>
         </p>
         <p class="intro-summary">
-          {{ about?.summary || '后端开发者，关注 Python、检索增强生成与个人知识管理。' }}
+          {{ about?.summary || '……' }}
         </p>
       </div>
       <RouterLink to="/about" class="btn btn-ghost intro-more">

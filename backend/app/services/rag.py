@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
 from dataclasses import asdict, dataclass
 
 from sqlmodel import Session, select
@@ -23,6 +24,19 @@ _FALLBACK_ANSWERS = {
     "LLM 未配置，仅返回检索到的相关片段，请查看引用来源。",
     "回答生成失败，请稍后重试。以下为检索到的相关片段，可参考引用来源。",
 }
+
+_STREAM_CHUNK_SIZE = 24
+
+
+def _stage_event(stage: str, label: str) -> dict:
+    return {"type": "stage", "stage": stage, "label": label}
+
+
+def _text_chunks(text: str, size: int = _STREAM_CHUNK_SIZE) -> Iterator[str]:
+    for start in range(0, len(text), size):
+        chunk = text[start : start + size]
+        if chunk:
+            yield chunk
 
 
 @dataclass
@@ -65,6 +79,9 @@ class RAGService:
                 return str(message.get("content") or "").strip()
         raise ValueError("messages 中没有用户提问")
 
+    def validate_messages(self, messages: list[dict]) -> None:
+        self._extract_question(messages)
+
     def _retrieve_chunks(self, query: str) -> list[Chunk]:
         if self._vector_store is None or self._embedder is None:
             return []
@@ -86,6 +103,43 @@ class RAGService:
             doc = session.get(Document, chunk.source_id)
             return doc.title if doc else "未知文档"
 
+    def _rank_chunks(
+        self, query: str, candidates: list[Chunk]
+    ) -> tuple[list[ChatSource], list[tuple[str, str]]]:
+        """重排候选片段并同时组装来源与 LLM 上下文。"""
+        texts = [chunk.content for chunk in candidates]
+        ordered: list[tuple[Chunk, float]] = []
+        if self._reranker is not None:
+            results = self._reranker.rerank(query, texts, self._settings.rerank_top_n)
+            seen: set[tuple[str, int, int]] = set()
+            for result in results:
+                if not (0 <= result.index < len(candidates)):
+                    continue
+                chunk = candidates[result.index]
+                key = (chunk.source_type, chunk.source_id, chunk.chunk_index)
+                if key in seen:
+                    continue
+                seen.add(key)
+                ordered.append((chunk, result.score))
+        else:
+            ordered = [(chunk, 0.0) for chunk in candidates[: self._settings.rerank_top_n]]
+
+        sources: list[ChatSource] = []
+        contexts: list[tuple[str, str]] = []
+        for chunk, score in ordered:
+            title = self._resolve_title(chunk)
+            sources.append(
+                ChatSource(
+                    title=title,
+                    source_type=chunk.source_type,
+                    source_id=chunk.source_id,
+                    chunk=chunk.content,
+                    score=round(score, 4),
+                )
+            )
+            contexts.append((title, chunk.content))
+        return sources, contexts
+
     def chat(self, messages: list[dict]) -> ChatResult:
         question = self._extract_question(messages)
 
@@ -105,39 +159,8 @@ class RAGService:
         if not candidates:
             return ChatResult(answer="知识库中没有检索到相关内容，暂时无法回答这个问题。", sources=[])
 
-        # 3. 重排与去重（按 source_type + source_id + chunk_index 剔除冗余）
-        texts = [chunk.content for chunk in candidates]
-        ordered: list[tuple[Chunk, float]] = []
-        if self._reranker is not None:
-            results = self._reranker.rerank(query, texts, self._settings.rerank_top_n)
-            seen: set[tuple[str, int, int]] = set()
-            for result in results:
-                if not (0 <= result.index < len(candidates)):
-                    continue
-                chunk = candidates[result.index]
-                key = (chunk.source_type, chunk.source_id, chunk.chunk_index)
-                if key in seen:
-                    continue
-                seen.add(key)
-                ordered.append((chunk, result.score))
-        else:
-            ordered = [(chunk, 0.0) for chunk in candidates[: self._settings.rerank_top_n]]
-
-        # 4. 组装来源与上下文
-        sources: list[ChatSource] = []
-        contexts: list[tuple[str, str]] = []
-        for chunk, score in ordered:
-            title = self._resolve_title(chunk)
-            sources.append(
-                ChatSource(
-                    title=title,
-                    source_type=chunk.source_type,
-                    source_id=chunk.source_id,
-                    chunk=chunk.content,
-                    score=round(score, 4),
-                )
-            )
-            contexts.append((title, chunk.content))
+        # 3. 重排与去重，随后组装来源与上下文
+        sources, contexts = self._rank_chunks(query, candidates)
 
         # 5. LLM 生成回答（使用原始问题，符合设计稿 7.2）
         if not self._llm.available:
@@ -154,6 +177,72 @@ class RAGService:
         # 6. 写入问答缓存
         self._maybe_store_cache(question, result)
         return result
+
+    def chat_stream(self, messages: list[dict]) -> Iterator[dict]:
+        """按 RAG 阶段产生 SSE 负载，由 API 层负责编码为事件流。"""
+        question = self._extract_question(messages)
+
+        yield _stage_event("cache", "正在读取FQA缓存")
+        cached = self._match_cache(question)
+        if cached is not None:
+            # 缓存命中时没有真实的 LLM 生成，但仍进入回答输出阶段，清除前端状态。
+            yield _stage_event("generate", "正在生成回答")
+            for chunk in _text_chunks(cached.answer):
+                yield {"type": "delta", "content": chunk}
+            yield {"type": "sources", "sources": [asdict(source) for source in cached.sources]}
+            yield {"type": "done"}
+            return
+
+        yield _stage_event("rewrite", "正在进行Query改写")
+        rewritten = self._llm.rewrite_query(messages)
+        query = rewritten or question
+        if rewritten:
+            logger.info("查询改写：%s -> %s", question, rewritten)
+
+        yield _stage_event("retrieve", "正在检索知识库")
+        candidates = self._retrieve_chunks(query)
+        if not candidates:
+            answer = "知识库中没有检索到相关内容，暂时无法回答这个问题。"
+            yield _stage_event("generate", "正在生成回答")
+            for chunk in _text_chunks(answer):
+                yield {"type": "delta", "content": chunk}
+            yield {"type": "sources", "sources": []}
+            yield {"type": "done"}
+            return
+
+        yield _stage_event("rerank", "正在重排检索结果")
+        sources, contexts = self._rank_chunks(query, candidates)
+        yield _stage_event("generate", "正在生成回答")
+
+        answer_parts: list[str] = []
+        if not self._llm.available:
+            answer = "LLM 未配置，仅返回检索到的相关片段，请查看引用来源。"
+            for chunk in _text_chunks(answer):
+                answer_parts.append(chunk)
+                yield {"type": "delta", "content": chunk}
+        else:
+            try:
+                for chunk in self._llm.stream_answer(question, contexts):
+                    answer_parts.append(chunk)
+                    yield {"type": "delta", "content": chunk}
+                answer = "".join(answer_parts).strip()
+                if not answer:
+                    answer = "回答生成失败，请稍后重试。以下为检索到的相关片段，可参考引用来源。"
+                    for chunk in _text_chunks(answer):
+                        answer_parts.append(chunk)
+                        yield {"type": "delta", "content": chunk}
+            except Exception:  # noqa: BLE001
+                logger.exception("LLM 流式生成回答失败")
+                answer = "回答生成失败，请稍后重试。以下为检索到的相关片段，可参考引用来源。"
+                if not answer_parts:
+                    for chunk in _text_chunks(answer):
+                        answer_parts.append(chunk)
+                        yield {"type": "delta", "content": chunk}
+
+        result = ChatResult(answer=answer, sources=sources)
+        self._maybe_store_cache(question, result)
+        yield {"type": "sources", "sources": [asdict(source) for source in sources]}
+        yield {"type": "done"}
 
     def _match_cache(self, question: str) -> ChatResult | None:
         """阶段一：内存索引按余弦相似度匹配缓存，命中后回库读取答案与来源。"""
