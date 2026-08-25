@@ -54,8 +54,8 @@ python -m scripts.sync_knowledge
 | database / milvus | SQLite 与 Milvus Lite 数据文件路径、集合名、向量维度（1024） |
 | content | 文章、本地文档、关于我文件的位置 |
 | import | chunk 最小/最大字符数与语义边界相似度下降阈值、embedding 批大小与批间隔（免费档限流保护） |
-| retrieval | 向量召回 top_k、重排保留 rerank_top_n |
-| qa_cache | 问答缓存：命中阈值 similarity_threshold、有效期 cache_ttl（秒）、可缓存最低重排得分 min_score |
+| retrieval | 向量召回 top_k、重排保留 rerank_top_n、重排最低置信度 min_score |
+| qa_cache | 问答缓存：命中阈值 similarity_threshold、有效期 cache_ttl（秒）；服务启动时会清空已有缓存 |
 | siliconflow | API Key、模型名（BAAI/bge-m3、BAAI/bge-reranker-v2-m3） |
 | openai | OpenAI 兼容接口（当前配置为 DeepSeek）：base_url、API Key、模型、温度；api_key 留空则问答只返回检索片段 |
 

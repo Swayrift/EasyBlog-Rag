@@ -6,8 +6,7 @@ import MarkdownView from '@/components/MarkdownView.vue'
 import { useChatStore } from '@/stores/chat'
 
 const chatStore = useChatStore()
-const { messages } = storeToRefs(chatStore)
-const input = ref('')
+const { messages, inputDraft } = storeToRefs(chatStore)
 const streamStatus = ref('')
 const streaming = ref(false)
 const busy = computed(() => streaming.value || chatStore.hasPendingMessage)
@@ -68,10 +67,10 @@ function resolveStoredSlugs() {
 }
 
 async function send(text) {
-  const content = (text ?? input.value).trim()
+  const content = (text ?? inputDraft.value).trim()
   if (!content || busy.value) return
 
-  input.value = ''
+  inputDraft.value = ''
   resetInputHeight()
   chatStore.addUserMessage(content)
   let pendingIndex = null
@@ -151,6 +150,14 @@ function autoGrow(event) {
   el.style.height = `${Math.min(el.scrollHeight, 160)}px`
 }
 
+function restoreInputHeight() {
+  nextTick(() => {
+    if (!inputEl.value) return
+    inputEl.value.style.height = 'auto'
+    inputEl.value.style.height = `${Math.min(inputEl.value.scrollHeight, 160)}px`
+  })
+}
+
 function scorePercent(score) {
   const clamped = Math.max(0, Math.min(1, Number(score) || 0))
   return `${Math.round(clamped * 100)}%`
@@ -163,6 +170,7 @@ onMounted(async () => {
     health.value = null
   }
   resolveStoredSlugs()
+  restoreInputHeight()
   inputEl.value?.focus()
 })
 </script>
@@ -306,7 +314,7 @@ onMounted(async () => {
       <div class="container chat-input-inner">
         <textarea
           ref="inputEl"
-          v-model="input"
+          v-model="inputDraft"
           class="chat-input"
           rows="1"
           placeholder="输入你的问题"
@@ -316,7 +324,7 @@ onMounted(async () => {
         <button
           class="send-btn"
           type="button"
-          :disabled="busy || !input.trim()"
+          :disabled="busy || !inputDraft.trim()"
           aria-label="发送"
           @click="send()"
         >

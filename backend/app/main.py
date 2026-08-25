@@ -96,6 +96,7 @@ async def lifespan(app: FastAPI):
     _run_initial_import(settings, engine, vector_store, embedder)
 
     qa_cache = QaCacheService(settings=settings, engine=engine, embedder=embedder)
+    qa_cache.clear()
     qa_cache.load()
 
     rag = RAGService(

@@ -19,12 +19,6 @@ from app.services.reranker import BaseReranker
 logger = logging.getLogger(__name__)
 
 
-_FALLBACK_ANSWERS = {
-    "知识库中没有检索到相关内容，暂时无法回答这个问题。",
-    "LLM 未配置，仅返回检索到的相关片段，请查看引用来源。",
-    "回答生成失败，请稍后重试。以下为检索到的相关片段，可参考引用来源。",
-}
-
 _STREAM_CHUNK_SIZE = 24
 
 
@@ -124,6 +118,17 @@ class RAGService:
         else:
             ordered = [(chunk, 0.0) for chunk in candidates[: self._settings.rerank_top_n]]
 
+        if self._reranker is not None:
+            ordered = [
+                (chunk, score)
+                for chunk, score in ordered
+                if score >= self._settings.rerank_min_score
+            ]
+
+        # 重排只负责筛选相关片段，最终按文档块主键恢复知识库中的顺序，
+        # 让相邻导入的文档内容尽量连续地进入提示词和 sources。
+        ordered.sort(key=lambda item: item[0].id if item[0].id is not None else 0)
+
         sources: list[ChatSource] = []
         contexts: list[tuple[str, str]] = []
         for chunk, score in ordered:
@@ -157,7 +162,9 @@ class RAGService:
         # 2. 向量检索
         candidates = self._retrieve_chunks(query)
         if not candidates:
-            return ChatResult(answer="知识库中没有检索到相关内容，暂时无法回答这个问题。", sources=[])
+            result = ChatResult(answer="知识库中没有检索到相关内容，暂时无法回答这个问题。", sources=[])
+            self._maybe_store_cache(question, result)
+            return result
 
         # 3. 重排与去重，随后组装来源与上下文
         sources, contexts = self._rank_chunks(query, candidates)
@@ -206,6 +213,7 @@ class RAGService:
             yield _stage_event("generate", "正在生成回答")
             for chunk in _text_chunks(answer):
                 yield {"type": "delta", "content": chunk}
+            self._maybe_store_cache(question, ChatResult(answer=answer, sources=[]))
             yield {"type": "sources", "sources": []}
             yield {"type": "done"}
             return
@@ -273,14 +281,8 @@ class RAGService:
         return ChatResult(answer=answer, sources=sources)
 
     def _maybe_store_cache(self, question: str, result: ChatResult) -> None:
-        """阶段二结束：满足可缓存条件时写入缓存并同步内存索引。"""
+        """阶段二结束：无论回答质量与来源分数如何，都写入缓存。"""
         if self._qa_cache is None or self._embedder is None:
-            return
-        if not result.sources:
-            return
-        if max((s.score for s in result.sources), default=0.0) < self._settings.qa_min_score:
-            return
-        if result.answer in _FALLBACK_ANSWERS:
             return
         try:
             query_vector = self._embedder.embed([question])[0]

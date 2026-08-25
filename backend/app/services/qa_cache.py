@@ -52,6 +52,17 @@ class QaCacheService:
             self._index.append((row.id, vector))
         logger.info("载入问答缓存 %d 条", len(self._index))
 
+    def clear(self) -> None:
+        """清空 SQLite 中的全部缓存问答及内存匹配索引。"""
+        with Session(self._engine) as session:
+            rows = session.exec(select(QaCache)).all()
+            for row in rows:
+                session.delete(row)
+            if rows:
+                session.commit()
+        self._index.clear()
+        logger.info("已清空问答缓存 %d 条", len(rows))
+
     def match(self, query_vector: list[float]) -> tuple[int, float] | None:
         """返回 (cache_id, score)，若最高相似度低于阈值则返回 None。"""
         best: tuple[int, float] | None = None

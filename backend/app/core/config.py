@@ -45,11 +45,11 @@ class Settings:
     # [retrieval]
     top_k: int = 10
     rerank_top_n: int = 4
+    rerank_min_score: float = 0.3
 
     # [qa_cache] 问答缓存
     qa_similarity_threshold: float = 0.85
     qa_cache_ttl: float = 604800.0
-    qa_min_score: float = 0.3
 
     # [siliconflow]
     sf_api_key: str = ""
@@ -104,9 +104,13 @@ def load_settings(config_path: Path | None = None) -> Settings:
         batch_sleep=parser.getfloat("import", "batch_sleep", fallback=0.5),
         top_k=parser.getint("retrieval", "top_k", fallback=10),
         rerank_top_n=parser.getint("retrieval", "rerank_top_n", fallback=4),
+        rerank_min_score=parser.getfloat(
+            "retrieval",
+            "min_score",
+            fallback=parser.getfloat("qa_cache", "min_score", fallback=0.3),
+        ),
         qa_similarity_threshold=parser.getfloat("qa_cache", "similarity_threshold", fallback=0.85),
         qa_cache_ttl=parser.getfloat("qa_cache", "cache_ttl", fallback=604800.0),
-        qa_min_score=parser.getfloat("qa_cache", "min_score", fallback=0.3),
         sf_api_key=get("siliconflow", "api_key"),
         sf_base_url=get("siliconflow", "base_url", "https://api.siliconflow.cn"),
         embedding_model=get("siliconflow", "embedding_model", "BAAI/bge-m3"),

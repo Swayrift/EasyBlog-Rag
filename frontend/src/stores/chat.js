@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 export const useChatStore = defineStore('chat', {
   state: () => ({
     messages: [],
+    inputDraft: '',
   }),
 
   getters: {
@@ -69,6 +70,7 @@ export const useChatStore = defineStore('chat', {
 
     clearConversation() {
       this.messages = []
+      this.inputDraft = ''
     },
   },
 })
