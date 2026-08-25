@@ -20,8 +20,7 @@ const router = createRouter({
       path: '/posts/:slug',
       name: 'post',
       component: () => import('@/views/PostDetailView.vue'),
-      // bare：不显示顶部导航栏与页脚，仅有返回按钮
-      meta: { title: '文章详情', bare: true },
+      meta: { title: '文章详情' },
     },
     {
       path: '/chat',

@@ -1,11 +1,14 @@
 <script setup>
 import { computed, nextTick, onMounted, ref } from 'vue'
+import { storeToRefs } from 'pinia'
 import { api } from '@/api/client'
 import MarkdownView from '@/components/MarkdownView.vue'
+import { useChatStore } from '@/stores/chat'
 
-const messages = ref([]) // { role, content, sources?, loading?, error? }
+const chatStore = useChatStore()
+const { messages } = storeToRefs(chatStore)
 const input = ref('')
-const busy = ref(false)
+const busy = computed(() => chatStore.hasPendingMessage)
 const health = ref(null)
 const threadEl = ref(null)
 const inputEl = ref(null)
@@ -52,16 +55,20 @@ async function resolveSlugs(sources) {
   }
 }
 
+function resolveStoredSlugs() {
+  messages.value
+    .filter((message) => message.role === 'assistant' && message.sources?.length)
+    .forEach((message) => resolveSlugs(message.sources))
+}
+
 async function send(text) {
   const content = (text ?? input.value).trim()
   if (!content || busy.value) return
 
   input.value = ''
   resetInputHeight()
-  messages.value.push({ role: 'user', content })
-  const pending = { role: 'assistant', content: '', sources: [], loading: true, error: '' }
-  messages.value.push(pending)
-  busy.value = true
+  chatStore.addUserMessage(content)
+  const pendingIndex = chatStore.addAssistantMessage()
   scrollToBottom()
 
   try {
@@ -70,21 +77,18 @@ async function send(text) {
       .slice(-20)
       .map((m) => ({ role: m.role, content: m.content }))
     const res = await api.chat(history)
-    pending.content = res.answer
-    pending.sources = res.sources || []
-    pending.expanded = pending.sources.map(() => false)
-    resolveSlugs(pending.sources)
+    chatStore.completeAssistantMessage(pendingIndex, res.answer, res.sources || [])
+    resolveSlugs(res.sources || [])
   } catch (err) {
-    pending.error = err.message
+    chatStore.failAssistantMessage(pendingIndex, err.message)
   } finally {
-    pending.loading = false
-    busy.value = false
+    chatStore.finishAssistantMessage(pendingIndex)
     scrollToBottom()
   }
 }
 
-function toggleSource(message, index) {
-  message.expanded[index] = !message.expanded[index]
+function toggleSource(messageIndex, sourceIndex) {
+  chatStore.toggleSource(messageIndex, sourceIndex)
 }
 
 function onKeydown(event) {
@@ -118,6 +122,7 @@ onMounted(async () => {
   } catch {
     health.value = null
   }
+  resolveStoredSlugs()
   inputEl.value?.focus()
 })
 </script>
@@ -150,7 +155,6 @@ onMounted(async () => {
       <div class="container chat-thread-inner">
         <!-- 空状态 -->
         <div v-if="!messages.length" class="chat-empty">
-          <div class="chat-empty-orb" aria-hidden="true"></div>
           <p class="chat-empty-title">向我的文章与文档提问</p>
           <p class="chat-empty-sub">
             问题会经过查询改写、向量检索与重排序，回答附带引用来源。
@@ -199,9 +203,9 @@ onMounted(async () => {
                       role="button"
                       tabindex="0"
                       :aria-expanded="!!message.expanded[si]"
-                      @click="toggleSource(message, si)"
-                      @keydown.enter.prevent="toggleSource(message, si)"
-                      @keydown.space.prevent="toggleSource(message, si)"
+                      @click="toggleSource(i, si)"
+                      @keydown.enter.prevent="toggleSource(i, si)"
+                      @keydown.space.prevent="toggleSource(i, si)"
                     >
                       <div class="source-head">
                         <span class="source-type">
@@ -352,26 +356,6 @@ onMounted(async () => {
   margin: auto;
   padding-top: 8vh;
   text-align: center;
-}
-
-.chat-empty-orb {
-  width: 84px;
-  height: 84px;
-  margin: 0 auto 28px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 32% 30%, #ffc46b, #ff7a1a 52%, #7a2e00);
-  box-shadow: 0 0 60px rgba(255, 122, 26, 0.45);
-  animation: orb-float 4.5s ease-in-out infinite;
-}
-
-@keyframes orb-float {
-  0%,
-  100% {
-    transform: translateY(0) scale(1);
-  }
-  50% {
-    transform: translateY(-12px) scale(1.04);
-  }
 }
 
 .chat-empty-title {

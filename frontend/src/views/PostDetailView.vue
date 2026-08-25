@@ -39,13 +39,6 @@ onMounted(async () => {
 
 <template>
   <article class="post">
-    <!-- 顶部仅返回按钮 -->
-    <div class="container-read post-top">
-      <button class="back-btn" type="button" @click="goBack">
-        <span class="back-arrow" aria-hidden="true">←</span> 返回
-      </button>
-    </div>
-
     <p v-if="loading" class="container-read notice">正在加载文章…</p>
 
     <template v-else-if="error">
@@ -86,47 +79,8 @@ onMounted(async () => {
   padding-bottom: 90px;
 }
 
-.post-top {
-  position: sticky;
-  top: 0;
-  z-index: 40;
-  padding-top: 18px;
-  padding-bottom: 18px;
-  background: rgba(10, 8, 7, 0.72);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border-bottom: 1px solid var(--line);
-}
-
-.back-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  background: none;
-  border: 1px solid var(--line-strong);
-  color: var(--muted);
-  font-size: 0.88rem;
-  padding: 8px 18px;
-  border-radius: 999px;
-  transition: all 0.28s ease;
-}
-
-.back-btn:hover {
-  color: var(--orange-hi);
-  border-color: rgba(255, 122, 26, 0.55);
-  transform: translateX(-3px);
-}
-
-.back-arrow {
-  transition: transform 0.28s cubic-bezier(0.22, 0.61, 0.36, 1);
-}
-
-.back-btn:hover .back-arrow {
-  transform: translateX(-4px);
-}
-
 .post-head {
-  padding-top: 76px;
+  padding-top: calc(var(--nav-h) + 46px);
 }
 
 .post-meta-row {

@@ -1,4 +1,5 @@
 import { createApp } from 'vue'
+import { createPinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
 import { reveal } from './directives/reveal'
@@ -16,8 +17,10 @@ import '@fontsource/jetbrains-mono/400-italic.css'
 import './assets/main.css'
 
 const app = createApp(App)
+const pinia = createPinia()
 
 app.directive('reveal', reveal)
+app.use(pinia)
 app.use(router)
 
 app.mount('#app')
