@@ -71,11 +71,3 @@ class ChatSource(BaseModel):
 class ChatResponse(BaseModel):
     answer: str
     sources: list[ChatSource] = []
-
-
-class HealthResponse(BaseModel):
-    status: str
-    title: str
-    vector_store_ok: bool
-    llm_ok: bool
-    time: datetime

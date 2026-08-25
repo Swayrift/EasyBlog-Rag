@@ -264,30 +264,6 @@ button {
   color: #ff9a80;
 }
 
-/* 呼吸圆点 */
-.dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  display: inline-block;
-}
-
-.dot-on {
-  background: var(--orange);
-  box-shadow: 0 0 0 0 rgba(255, 122, 26, 0.6);
-  animation: pulse 2.2s ease-out infinite;
-}
-
-.dot-off {
-  background: var(--faint);
-}
-
-@keyframes pulse {
-  0% { box-shadow: 0 0 0 0 rgba(255, 122, 26, 0.55); }
-  70% { box-shadow: 0 0 0 9px rgba(255, 122, 26, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(255, 122, 26, 0); }
-}
-
 /* ---------- 响应式 ---------- */
 
 @media (max-width: 720px) {

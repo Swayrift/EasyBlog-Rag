@@ -92,8 +92,6 @@ async function chatStream(messages, onEvent) {
 }
 
 export const api = {
-  health: () => request('/health'),
-
   posts: (params = {}) => {
     const qs = new URLSearchParams()
     if (params.page) qs.set('page', String(params.page))

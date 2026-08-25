@@ -10,7 +10,6 @@ const { messages, inputDraft } = storeToRefs(chatStore)
 const streamStatus = ref('')
 const streaming = ref(false)
 const busy = computed(() => streaming.value || chatStore.hasPendingMessage)
-const health = ref(null)
 const threadEl = ref(null)
 const inputEl = ref(null)
 
@@ -23,11 +22,6 @@ const suggestions = [
   'RAG 知识库问答的流程是怎样的？',
   '检索效果可以怎么调优？',
 ]
-
-const statusText = computed(() => {
-  if (!health.value) return '检测中…'
-  return health.value.vector_store_ok ? '知识库在线' : '知识库离线'
-})
 
 function scrollToBottom() {
   nextTick(() => {
@@ -163,12 +157,7 @@ function scorePercent(score) {
   return `${Math.round(clamped * 100)}%`
 }
 
-onMounted(async () => {
-  try {
-    health.value = await api.health()
-  } catch {
-    health.value = null
-  }
+onMounted(() => {
   resolveStoredSlugs()
   restoreInputHeight()
   inputEl.value?.focus()
@@ -177,27 +166,6 @@ onMounted(async () => {
 
 <template>
   <div class="chat">
-    <!-- 顶部标题与状态 -->
-    <header class="chat-head container">
-      <div class="chat-head-text">
-        <p class="eyebrow">RAG Knowledge QA</p>
-        <h1 class="chat-title">知识库问答</h1>
-      </div>
-      <span class="chat-status">
-        <span
-          class="dot"
-          :class="health && health.vector_store_ok ? 'dot-on' : 'dot-off'"
-        ></span>
-        {{ statusText }}
-      </span>
-    </header>
-
-    <div v-if="health && !health.vector_store_ok" class="container">
-      <p class="chat-warn">
-        向量库当前不可用，问答无法检索知识库内容。请确认后端已安装 milvus-lite 并正常启动。
-      </p>
-    </div>
-
     <!-- 对话区 -->
     <div ref="threadEl" class="chat-thread">
       <div class="container chat-thread-inner">
@@ -341,45 +309,6 @@ onMounted(async () => {
   flex-direction: column;
   height: 100dvh;
   padding-top: var(--nav-h);
-}
-
-/* ---------- 头部 ---------- */
-.chat-head {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 16px;
-  padding-top: 26px;
-  padding-bottom: 18px;
-  border-bottom: 1px solid var(--line);
-}
-
-.chat-title {
-  font-family: var(--font-serif);
-  font-weight: 900;
-  font-size: 1.6rem;
-  margin-top: 8px;
-}
-
-.chat-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  font-family: var(--font-mono);
-  font-size: 0.74rem;
-  letter-spacing: 0.12em;
-  color: var(--muted);
-  padding-bottom: 6px;
-}
-
-.chat-warn {
-  margin-top: 12px;
-  font-size: 0.82rem;
-  color: #ffb08a;
-  background: rgba(255, 122, 26, 0.08);
-  border: 1px solid rgba(255, 122, 26, 0.25);
-  border-radius: 10px;
-  padding: 10px 14px;
 }
 
 /* ---------- 对话区 ---------- */
@@ -656,6 +585,9 @@ onMounted(async () => {
 .chat-input {
   flex: 1;
   resize: none;
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   background: var(--bg-soft);
   border: 1px solid var(--line-strong);
   border-radius: 14px;
@@ -666,6 +598,10 @@ onMounted(async () => {
   padding: 12px 16px;
   max-height: 160px;
   transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.chat-input::-webkit-scrollbar {
+  display: none;
 }
 
 .chat-input::placeholder {

@@ -65,7 +65,6 @@ python -m scripts.sync_knowledge
 
 | 方法 | 路径 | 说明 |
 | :-- | :-- | :-- |
-| GET | /api/health | 健康检查 |
 | GET | /api/posts?page=1&page_size=10&tag=标签名 | 文章列表 |
 | GET | /api/posts/{slug} | 文章详情 |
 | GET | /api/posts/id/{post_id} | 按 ID 查文章，供问答引用来源跳转 |
@@ -88,7 +87,7 @@ python -m scripts.sync_knowledge
 backend/
 ├── app/
 │   ├── main.py            # 应用入口，启动时自动导入知识
-│   ├── api/               # 路由：health/posts/tags/about/chat
+│   ├── api/               # 路由：posts/tags/about/chat
 │   ├── core/              # 配置、数据库、日志、应用上下文
 │   ├── models/            # SQLite 表模型（SQLModel）
 │   ├── schemas/           # 请求/响应模型（Pydantic）

@@ -6,7 +6,6 @@ import PostCard from '@/components/PostCard.vue'
 
 const posts = ref([])
 const total = ref(0)
-const health = ref(null)
 const about = ref(null)
 const tags = ref([])
 const loading = ref(true)
@@ -14,13 +13,9 @@ const error = ref('')
 
 onMounted(async () => {
   try {
-    const [postsRes, healthRes] = await Promise.all([
-      api.posts({ page: 1, pageSize: 4 }),
-      api.health(),
-    ])
+    const postsRes = await api.posts({ page: 1, pageSize: 4 })
     posts.value = postsRes.items
     total.value = postsRes.total
-    health.value = healthRes
   } catch (err) {
     error.value = err.message
   } finally {
@@ -59,16 +54,6 @@ onMounted(async () => {
     <div class="hero-actions reveal" style="--reveal-delay: 430ms">
       <RouterLink to="/articles" class="btn btn-primary">阅读文章</RouterLink>
       <RouterLink to="/chat" class="btn btn-ghost">向知识库提问</RouterLink>
-      <span class="hero-status">
-        <span class="dot" :class="health && health.vector_store_ok ? 'dot-on' : 'dot-off'"></span>
-        {{
-          loading
-            ? '正在连接后端…'
-            : health && health.vector_store_ok
-              ? '知识库在线'
-              : '知识库离线'
-        }}
-      </span>
     </div>
   </section>
 
@@ -225,17 +210,6 @@ onMounted(async () => {
   align-items: center;
   gap: 18px;
   flex-wrap: wrap;
-}
-
-.hero-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  margin-left: 10px;
-  font-family: var(--font-mono);
-  font-size: 0.74rem;
-  letter-spacing: 0.12em;
-  color: var(--muted);
 }
 
 /* ---------- 个人简介 ---------- */

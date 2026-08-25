@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import about, chat, health, posts, tags
+from app.api import about, chat, posts, tags
 from app.core.app_context import AppContext
 from app.core.config import Settings, load_settings
 from app.core.database import create_db_engine, init_db
@@ -141,7 +141,6 @@ def create_app() -> FastAPI:
             allow_headers=["*"],
         )
 
-    app.include_router(health.router)
     app.include_router(posts.router)
     app.include_router(tags.router)
     app.include_router(about.router)
