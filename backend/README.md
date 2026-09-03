@@ -1,17 +1,16 @@
 # 博客后端
 
-FastAPI + SQLite（SQLModel）+ Milvus Lite 的个人博客后端，内置 RAG 知识库问答。
+FastAPI + SQLite（SQLModel）+ FAISS 的个人博客后端，内置 RAG 知识库问答。
 向量模型与重排模型使用硅基流动（SiliconFlow）平台的免费模型，答案生成使用 OpenAI 兼容接口（当前配置为 DeepSeek，可在 config.ini 中切换）。
 
 详细设计见 `../docs/design.md`。
 
 ## 环境要求
 
-- Python 3.10 及以上（milvus-lite 3.x 要求 Python ≥ 3.10）
-- 向量库使用 Milvus Lite 嵌入模式：`pymilvus` + `milvus-lite` 两个包配合，
-  向 `MilvusClient` 传入本地 `.db` 文件路径即可启动，无需单独部署 Milvus 服务。
-  milvus-lite 3.x 为纯 Python 实现，Windows / Linux / macOS 均可原生运行
-  （旧版 2.x 才仅限 Linux/macOS）。
+- Python 3.10 及以上。
+- 向量库使用本地 FAISS CPU 索引，索引文件位于 `data/faiss/`，无需单独部署服务。
+- 如果使用当前的 venv + pip 流程，请先在目标平台验证 `faiss-cpu` 的安装和
+  `import faiss` 冒烟测试。
 - 代码里已做降级处理：向量库不可用时，博客的文章/标签/关于我接口仍然可用，
   仅问答检索不可用。
 
@@ -51,7 +50,7 @@ python -m scripts.sync_knowledge
 | 节 | 说明 |
 | :-- | :-- |
 | app | 站点标题、监听地址端口、CORS 允许来源 |
-| database / milvus | SQLite 与 Milvus Lite 数据文件路径、集合名、向量维度（1024） |
+| database / faiss | SQLite 与 FAISS 索引、清单文件路径、向量维度（1024） |
 | content | 文章、本地文档、关于我文件的位置 |
 | import | chunk 最小/最大字符数与语义边界相似度下降阈值、embedding 批大小与批间隔（免费档限流保护） |
 | retrieval | 向量召回 top_k、重排保留 rerank_top_n、重排最低置信度 min_score |
@@ -91,7 +90,7 @@ backend/
 │   ├── core/              # 配置、数据库、日志、应用上下文
 │   ├── models/            # SQLite 表模型（SQLModel）
 │   ├── schemas/           # 请求/响应模型（Pydantic）
-│   └── services/          # 硅基流动客户端、Milvus、导入器、RAG 编排
+│   └── services/          # 硅基流动客户端、FAISS、导入器、RAG 编排
 ├── scripts/sync_knowledge.py
 ├── config.ini             # 实际配置（含密钥，不入库）
 ├── config.example.ini

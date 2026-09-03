@@ -65,7 +65,7 @@ class Document(SQLModel, table=True):
 class Chunk(SQLModel, table=True):
     __tablename__ = "chunks"
 
-    # AUTOINCREMENT 避免主键复用导致与 Milvus 向量主键错位
+    # AUTOINCREMENT 避免主键复用导致与 FAISS 向量主键错位
     id: Optional[int] = Field(
         default=None,
         sa_column=Column(Integer, primary_key=True, autoincrement=True),
@@ -74,7 +74,6 @@ class Chunk(SQLModel, table=True):
     source_id: int = Field(index=True)
     chunk_index: int = 0
     content: str = ""
-    milvus_id: str = ""
 
 
 class QaCache(SQLModel, table=True):
@@ -87,7 +86,7 @@ class QaCache(SQLModel, table=True):
     answer: str = ""
     sources: str = "[]"  # JSON 数组，结构与 /api/chat 响应 sources 一致
     question_vector: str = "[]"  # JSON 数组（1024 维），启动时载入内存用于相似度匹配
-    status: str = Field(default="active", index=True)  # active / invalidated
+    # status: str = Field(default="active", index=True)  # active / invalidated
     expires_at: datetime = Field(default_factory=datetime.now)
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)

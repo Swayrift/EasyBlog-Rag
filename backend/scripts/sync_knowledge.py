@@ -14,7 +14,7 @@ from app.core.database import create_db_engine, init_db
 from app.core.logging import setup_logging
 from app.services.embedding import SiliconFlowEmbedder
 from app.services.importer import sync_knowledge
-from app.services.milvus_store import MilvusVectorStore
+from app.services.faiss_store import FaissVectorStore
 
 logger = logging.getLogger(__name__)
 
@@ -34,10 +34,10 @@ def main() -> int:
         batch_sleep=settings.batch_sleep,
         timeout=settings.sf_timeout,
     )
-    settings.milvus_db_path.parent.mkdir(parents=True, exist_ok=True)
-    vector_store = MilvusVectorStore(
-        db_path=str(settings.milvus_db_path),
-        collection_name=settings.collection_name,
+    settings.faiss_index_path.parent.mkdir(parents=True, exist_ok=True)
+    vector_store = FaissVectorStore(
+        index_path=settings.faiss_index_path,
+        manifest_path=settings.faiss_manifest_path,
         dim=settings.embedding_dim,
     )
 

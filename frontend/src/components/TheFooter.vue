@@ -8,7 +8,7 @@ const year = new Date().getFullYear()
       <div class="footer-rule" aria-hidden="true"></div>
       <div class="footer-row">
         <p class="footer-main">© {{ year }} SwayRift · 把技术思考沉淀成文字</p>
-        <p class="footer-sub">FastAPI · Vue 3 · SQLite · Milvus Lite</p>
+        <p class="footer-sub">FastAPI · Vue 3 · SQLite · FAISS</p>
       </div>
     </div>
   </footer>

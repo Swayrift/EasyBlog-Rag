@@ -1,7 +1,7 @@
 # 博客前端
 
 Vue 3 + Vite + Vue Router 的个人博客前端，黑色 × 橙色的编辑风格主题，
-配套后端见 `../backend`（FastAPI + SQLite + Milvus Lite）。
+配套后端见 `../backend`（FastAPI + SQLite + FAISS）。
 
 ## 页面结构
 

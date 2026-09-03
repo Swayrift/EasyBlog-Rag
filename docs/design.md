@@ -1,4 +1,4 @@
-# 个人博客 + 智能问答系统设计方案
+# 个人博客 + 智能问答系统设计方案（已停止更新）
 
 ## 1. 项目概述
 
@@ -40,7 +40,7 @@
 
 - 不提供后台管理界面。
 - 文章以 Markdown 文件存储在仓库中，本地文档放置在专门的知识目录中。
-- 提供导入脚本：识别文件类型并提取文本，将元信息写入 SQLite，并将正文切分、向量化后写入 Milvus Lite。
+- 提供导入脚本：识别文件类型并提取文本，将元信息写入 SQLite，并将正文切分、向量化后写入 FAISS。
 - 导入时机：后端服务启动时自动执行导入脚本，解析并更新文章与文档。
 - 启动降级策略：向量库或 Embedding 服务不可用时不阻止启动——博客的文章、标签、关于我接口仍可用，仅问答检索降级不可用；导入流程继续同步 SQLite 元数据（含 `file_hash`），仅跳过切分与向量化，待服务恢复后重启即可自动补偿缺失的向量。
 - 当前支持的文章/文档格式：Markdown，后续再扩展 PDF、Word 等。
@@ -60,7 +60,7 @@
 | 前端框架   | Vue 3 + Vite                                                 | 组件化、生态成熟                                             |
 | 前端路由   | Vue Router                                                   | SPA 路由                                                     |
 | 关系数据库 | SQLite                                                       | 存储文章、标签及问答缓存等结构化数据                         |
-| 向量数据库 | Milvus Lite                                                  | 本地嵌入式向量检索，适合个人项目                             |
+| 向量索引   | FAISS                                                        | 本地精确向量检索，适合个人项目                               |
 | ORM        | SQLModel                                                     | 与 FastAPI、Pydantic 集成良好                                |
 | 向量模型   | 硅基流动（SiliconFlow）API：BAAI/bge-m3、BAAI/bge-reranker-v2-m3 | 通过 SiliconFlow 的 `/v1/embeddings` 与 `/v1/rerank` 接口调用；bge-m3 负责召回（输出 1024 维稠密向量），bge-reranker-v2-m3 负责重排序。无需本地部署模型或加载权重，api_key / base_url / 模型名通过 config.ini 配置 |
 | LLM        | OpenAI 兼容接口（当前配置为 DeepSeek）                       | 用于问答改写与生成回答，base_url / 模型通过 config.ini 配置  |
@@ -73,7 +73,7 @@ flowchart LR
     U["用户浏览器"] --> F["Vue 前端"]
     F -->|REST API| B["FastAPI 后端"]
     B --> S["SQLite 内容库"]
-    B --> M["Milvus Lite 向量库"]
+    B --> M["FAISS 本地索引"]
     B -->|SiliconFlow HTTP| W["Embedding / Rerank API（bge-m3、bge-reranker-v2-m3）"]
     B -->|OpenAI 兼容 HTTP| L["LLM 服务"]
     I["content/ 文章、文档"] -->|启动导入| B
@@ -98,10 +98,10 @@ flowchart LR
 
 - **未变更文件**（`file_path` 存在且 `file_hash` 未变）：跳过处理，不消耗 Embedding 算力。
 - **失效删除**（SQLite 中存在，但磁盘 `content/` 下已被删除）：
-  1. 根据 `source_type`（`post` 或 `document`）和 `source_id` 在 Milvus Lite 中按标量属性（Scalar Filtering）批量删除所有对应的向量 Chunk。
+  1. 从 SQLite 查询该来源的 Chunk ID，并在 FAISS 中批量删除对应向量。
   2. 在 SQLite 中同步删除该条目（`posts` 或 `documents` 表）。
 - **新增 / 全量更新文件**（新增路径，或已有路径的 `file_hash` 发生变化）：
-  1. **覆盖重置**：若为更新操作，优先清理 Milvus Lite 中该 `source_id` 旧有的向量 Chunk，并在 SQLite 中重置元信息。
+  1. **覆盖重置**：若为更新操作，优先清理 FAISS 中该来源旧有的向量 Chunk，并在 SQLite 中重置元信息。
   2. **解析内容**：
      - 若为博客文章（如带 yaml 头），解析 Front Matter 提取 `title`、`tags`、`created_at` 等元信息，正文作为主内容；
      - 若为通用 Markdown 文档，提取首个一级标题为 `title`，全篇正文作为主内容。
@@ -118,15 +118,13 @@ flowchart LR
   - 当当前 Block 累计字符数达到 `min_chunk_size` 且相邻句子相似度出现骤降（如跌破设定阈值 0.65）时，触发切分。
   - 若 Block 达到 `max_chunk_size` 仍未骤降，强制触发兜底切分，确保 Chunk 大小均匀。
 
-#### 4. 向量生成与 Milvus 索引落库
+#### 4. 向量生成与 FAISS 索引落库
 
 - **向量化**：调用 SiliconFlow `/v1/embeddings`（模型 BAAI/bge-m3）为切分出的每个 Chunk 生成 1024 维稠密向量。
-- **向量写入**：批量插入 Milvus Lite 向量库，元数据字段包含：
+- **向量写入**：批量写入 FAISS 索引；索引只保存向量和 Chunk ID，来源元数据继续保存在 SQLite：
   - `id`: Chunk 唯一主键
-  - `source_type`: 来源类型（`post` / `document`）
-  - `source_id`: SQLite 对应的文章/文档 ID
-  - `chunk_index`: 片段在全文中的相对位置序号
   - `dense_vector`: 稠密向量
+  - `source_type`、`source_id`、`chunk_index`：仅作为 SQLite `chunks` 表字段，用于检索结果回填
 
 #### 5. 重启/刷新内存问答缓存
 
@@ -149,7 +147,7 @@ flowchart LR
 #### 阶段二：RAG 深度问答
 
 1. **Query 改写**：后端将历史消息与当前问题提交给 LLM，进行指代消除与上下文补全（例如将“它的优点是什么”改写为“FastAPI 框架的优点是什么”），输出检索专用的 `search_query`。
-2. **向量召回**：使用 `search_query` 生成的稠密向量，在 Milvus Lite 向量库中按向量相似度检索，取回 `top-k` 个最相关的文章/文档片段（`top-k` 从 `config.ini` 读取）。
+2. **向量召回**：使用 `search_query` 生成的稠密向量，在 FAISS 索引中按 Inner Product 检索，取回 `top-k` 个最相关的文章/文档片段（`top-k` 从 `config.ini` 读取）。
 3. **重排序与去重**：调用 `BAAI/bge-reranker-v2-m3` 对候选片段进行二次交叉注意力打分，截取 `top-n`（如 Top 5）最贴切的片段并按 `source_id` + `chunk_index` 剔除冗余；分数低于 `[retrieval]` 的 `min_score` 的片段会被过滤，剩余片段再按 `chunks.id` 升序恢复文档顺序。
 4. **上下文组装与生成**：仅将通过最低置信度且已按文档块主键排序的片段组装进 Prompt 模板，调用 LLM 生成回答。
 5. **结构化返回**：返回最终回答及通过最低置信度的引用来源列表，包含 `source_type`（`post` / `document`）、`source_id`、`title` 和片段内容；所有引用来源均仅展示片段、不提供跳转。
@@ -210,7 +208,6 @@ flowchart LR
 | source_id   | INTEGER    | 来源记录 ID，指向 posts.id 或 documents.id |
 | chunk_index | INTEGER    | 片段顺序                                   |
 | content     | TEXT       | 片段文本                                   |
-| milvus_id   | TEXT       | Milvus 中的向量 ID                         |
 
 **qa_cache 缓存问答表**
 
@@ -235,17 +232,15 @@ flowchart LR
 
 ### 8.2 向量数据
 
-Milvus Lite 中每个 chunk 对应一条向量记录，字段与 §7.1 第 4 步保持一致：
+FAISS 索引中每个 chunk 对应一条向量记录，字段与 §7.1 第 4 步保持一致：
 
-- `id`：Chunk 唯一主键（INT64），与 SQLite `chunks` 表主键同值，`chunks.milvus_id` 保存其字符串形式，用于双向定位
-- `dense_vector`：稠密向量（FLOAT_VECTOR），1024 维（BAAI/bge-m3 输出维度，Milvus 集合需按此维度建立）
-- `source_type`：来源类型（`post` / `document`）
-- `source_id`：SQLite 对应的文章/文档 ID
-- `chunk_index`：片段在全文中的相对位置序号
+- `id`：Chunk 唯一主键（INT64），与 SQLite `chunks` 表主键同值
+- `dense_vector`：稠密向量（1024 维），使用 FAISS `IndexIDMap2(IndexFlatIP)` 保存
+- `source_type`、`source_id`、`chunk_index`：保存在 SQLite，不写入 FAISS
 
-说明：问答缓存的「问题向量」不写入 Milvus，随缓存条目存储在 SQLite。启动及写入新条目时，仅将「问题 + 问题向量」装入内存用于相似度比对，命中后再按 id 从 SQLite 读取 `answer` 与 `sources`（`answer` / `sources` 不常驻内存）。
+说明：问答缓存的「问题向量」不写入 FAISS，随缓存条目存储在 SQLite。启动及写入新条目时，仅将「问题 + 问题向量」装入内存用于相似度比对，命中后再按 id 从 SQLite 读取 `answer` 与 `sources`（`answer` / `sources` 不常驻内存）。
 
-片段原文不写入 Milvus，统一存储在 SQLite `chunks.content`；Milvus 仅保存向量与用于检索、定位的元数据（`id`、`source_type`、`source_id`、`chunk_index`）。
+片段原文不写入 FAISS，统一存储在 SQLite `chunks.content`；FAISS 仅保存向量和用于定位的 `id`，来源元数据由 SQLite 提供。
 
 ### 8.3 内容文件结构（Markdown）
 
@@ -291,7 +286,7 @@ tech_stack:
   - Python / FastAPI
   - Vue 3 / Vite
   - SQLite / SQLModel
-  - Milvus Lite
+  - FAISS
   - BGE-M3 / BGE-Reranker
 contact:
   email: hi@swayrift.top
@@ -392,7 +387,7 @@ Blog/
 │   │   ├── schemas/
 │   │   └── services/
 │   ├── scripts/
-│   ├── data/                 # 运行期数据：blog.db、milvus.db（不入库）
+│   ├── data/                 # 运行期数据：blog.db、faiss/（不入库）
 │   ├── config.ini            # 实际配置（含密钥，不入库）
 │   ├── config.example.ini
 │   ├── requirements.txt
@@ -420,6 +415,6 @@ Blog/
 
 - 前端执行 `npm run build` 生成静态文件，构建产物由 Nginx 接管。
 - 使用 Uvicorn 单进程运行，适合个人低流量场景。
-- SQLite 和 Milvus Lite 均以本地文件或嵌入式方式运行，无需额外服务。
+- SQLite 和 FAISS 均以本地文件或嵌入式方式运行，无需额外服务。
 - Embedding 与重排模型通过 SiliconFlow 的 HTTP API 调用（`/v1/embeddings`、`/v1/rerank`），无需本地部署模型或加载权重，后端不承担模型内存开销。
 - 可选：使用 Docker 镜像打包，便于迁移和复现。

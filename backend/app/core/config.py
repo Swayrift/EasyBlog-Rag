@@ -25,10 +25,10 @@ class Settings:
     debug: bool = False
     cors_origins: tuple[str, ...] = ()
 
-    # [database] / [milvus]
+    # [database] / [faiss]
     sqlite_path: Path = BACKEND_ROOT / "data" / "blog.db"
-    milvus_db_path: Path = BACKEND_ROOT / "data" / "milvus.db"
-    collection_name: str = "blog_chunks"
+    faiss_index_path: Path = BACKEND_ROOT / "data" / "faiss" / "index.faiss"
+    faiss_manifest_path: Path = BACKEND_ROOT / "data" / "faiss" / "manifest.json"
     embedding_dim: int = 1024
 
     # [content]
@@ -92,9 +92,11 @@ def load_settings(config_path: Path | None = None) -> Settings:
         debug=parser.getboolean("app", "debug", fallback=False),
         cors_origins=_split_origins(get("app", "cors_origins")),
         sqlite_path=_resolve_path(get("database", "sqlite_path", "data/blog.db")),
-        milvus_db_path=_resolve_path(get("milvus", "db_path", "data/milvus.db")),
-        collection_name=get("milvus", "collection", "blog_chunks"),
-        embedding_dim=parser.getint("milvus", "embedding_dim", fallback=1024),
+        faiss_index_path=_resolve_path(get("faiss", "index_path", "data/faiss/index.faiss")),
+        faiss_manifest_path=_resolve_path(
+            get("faiss", "manifest_path", "data/faiss/manifest.json")
+        ),
+        embedding_dim=parser.getint("faiss", "embedding_dim", fallback=1024),
         posts_dir=_resolve_path(get("content", "posts_dir", "../content/posts")),
         documents_dir=_resolve_path(get("content", "documents_dir", "../content/documents")),
         about_file=_resolve_path(get("content", "about_file", "../content/about.md")),

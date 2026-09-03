@@ -1,9 +1,9 @@
 # SwayRift 个人博客
 
 极简、可扩展的个人技术博客，内置 RAG 知识库问答：文章与本地文档经切分、向量化后存入
-Milvus Lite，提问时先检索再生成，回答附带引用来源。
+FAISS，提问时先检索再生成，回答附带引用来源。
 
-- 后端：FastAPI + SQLite（SQLModel）+ Milvus Lite，详见 [`backend/README.md`](backend/README.md)
+- 后端：FastAPI + SQLite（SQLModel）+ FAISS，详见 [`backend/README.md`](backend/README.md)
 - 前端：Vue 3 + Vite + Vue Router，黑色 × 橙色编辑风格主题，详见 [`frontend/README.md`](frontend/README.md)
 - 设计文档：[`docs/design.md`](docs/design.md)
 - 内容：Markdown 文件存放在 `content/`（posts / documents / about.md），后端启动时自动增量同步

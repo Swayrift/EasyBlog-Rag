@@ -30,7 +30,7 @@ def l2_normalize(vector: list[float]) -> list[float]:
 class SiliconFlowEmbedder(BaseEmbedder):
     """硅基流动 POST /v1/embeddings（OpenAI 兼容格式）。
 
-    输出向量统一做 L2 归一化，配合 Milvus 的 IP 度量等价于余弦相似度。
+    输出向量统一做 L2 归一化，配合 FAISS 的 Inner Product 度量等价于余弦相似度。
     """
 
     def __init__(

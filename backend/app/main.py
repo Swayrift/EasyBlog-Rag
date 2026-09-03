@@ -19,7 +19,7 @@ from app.core.logging import setup_logging
 from app.services.embedding import BaseEmbedder, SiliconFlowEmbedder
 from app.services.importer import sync_knowledge
 from app.services.llm import LLMClient
-from app.services.milvus_store import MilvusVectorStore, VectorStore
+from app.services.faiss_store import FaissVectorStore, VectorStore
 from app.services.qa_cache import QaCacheService
 from app.services.rag import RAGService
 from app.services.reranker import BaseReranker, SiliconFlowReranker
@@ -49,17 +49,17 @@ def _build_vector_services(settings: Settings) -> tuple[VectorStore | None, Base
         return None, None, None
 
     try:
-        settings.milvus_db_path.parent.mkdir(parents=True, exist_ok=True)
-        vector_store: VectorStore = MilvusVectorStore(
-            db_path=str(settings.milvus_db_path),
-            collection_name=settings.collection_name,
+        settings.faiss_index_path.parent.mkdir(parents=True, exist_ok=True)
+        vector_store: VectorStore = FaissVectorStore(
+            index_path=settings.faiss_index_path,
+            manifest_path=settings.faiss_manifest_path,
             dim=settings.embedding_dim,
         )
     except Exception:  # noqa: BLE001
         logger.exception(
-            "Milvus Lite 初始化失败，问答检索不可用。"
-            "请确认已安装 pymilvus 与 milvus-lite（pip install -r requirements.txt），"
-            "且本地 .db 文件所在目录可写。"
+            "FAISS 初始化失败，问答检索不可用。"
+            "请确认已安装 faiss-cpu 与 numpy（pip install -r requirements.txt），"
+            "且索引文件所在目录可写。"
         )
         return None, embedder, reranker
 
@@ -70,6 +70,8 @@ def _run_initial_import(settings: Settings, engine, vector_store, embedder) -> N
     # 导入器已支持降级：向量服务不可用时仍会同步 SQLite 元数据，仅跳过向量化。
     try:
         sync_knowledge(settings, engine, vector_store, embedder)
+        if vector_store is not None:
+            vector_store.persist()
     except Exception:  # noqa: BLE001
         logger.exception("启动时的知识导入失败")
 
@@ -96,7 +98,6 @@ async def lifespan(app: FastAPI):
     _run_initial_import(settings, engine, vector_store, embedder)
 
     qa_cache = QaCacheService(settings=settings, engine=engine, embedder=embedder)
-    qa_cache.clear()
     qa_cache.load()
 
     rag = RAGService(

@@ -8,7 +8,7 @@ from sqlalchemy.engine import Engine
 
 from app.core.config import Settings
 from app.services.llm import LLMClient
-from app.services.milvus_store import MilvusVectorStore
+from app.services.faiss_store import VectorStore
 from app.services.rag import RAGService
 
 
@@ -16,6 +16,6 @@ from app.services.rag import RAGService
 class AppContext:
     settings: Settings
     engine: Engine
-    vector_store: MilvusVectorStore | None
+    vector_store: VectorStore | None
     llm: LLMClient
     rag: RAGService

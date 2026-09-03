@@ -10,7 +10,7 @@ import json
 import logging
 from datetime import datetime, timedelta
 
-from sqlmodel import Session, select
+from sqlmodel import Session, select, delete
 
 from app.core.config import Settings
 from app.models.db_models import QaCache
@@ -33,13 +33,13 @@ class QaCacheService:
         self._index: list[tuple[int, list[float]]] = []  # (cache_id, question_vector)
 
     def load(self) -> None:
-        """启动时载入 active 且未过期的条目（仅问题向量）。"""
+        """启动时载入未过期的条目（仅问题向量）。"""
         self._index.clear()
         if self._embedder is None:
             return
         now = datetime.now()
         with Session(self._engine) as session:
-            rows = session.exec(select(QaCache).where(QaCache.status == "active")).all()
+            rows = session.exec(select(QaCache)).all()
         for row in rows:
             if row.expires_at is not None and row.expires_at <= now:
                 continue
@@ -103,7 +103,7 @@ class QaCacheService:
                 answer=answer,
                 sources=json.dumps(sources, ensure_ascii=False),
                 question_vector=json.dumps(question_vector),
-                status="active",
+                # status="active",
                 expires_at=expires_at,
             )
             session.add(row)
@@ -113,17 +113,16 @@ class QaCacheService:
         self._index.append((cache_id, question_vector))
 
     def prune_expired(self) -> None:
-        """清理已过期条目：内存移除 + SQLite 标记 invalidated。"""
+        """清理已过期条目：直接物理删除（数据库 + 内存索引）"""
         now = datetime.now()
         with Session(self._engine) as session:
-            rows = session.exec(select(QaCache).where(QaCache.status == "active")).all()
+            rows = session.exec(select(QaCache)).all()
             expired_ids = set()
             for row in rows:
                 if row.expires_at is not None and row.expires_at <= now:
                     expired_ids.add(row.id)
-                    row.status = "invalidated"
-                    session.add(row)
             if expired_ids:
+                session.exec(delete(QaCache).where(QaCache.id.in_(expired_ids)))
                 session.commit()
         if expired_ids:
             self._index = [(cid, vec) for cid, vec in self._index if cid not in expired_ids]

@@ -12,7 +12,7 @@ from app.core.config import Settings
 from app.models.db_models import Chunk, Document, Post
 from app.services.embedding import BaseEmbedder
 from app.services.llm import LLMClient
-from app.services.milvus_store import VectorStore
+from app.services.faiss_store import VectorStore
 from app.services.qa_cache import QaCacheService
 from app.services.reranker import BaseReranker
 
@@ -169,7 +169,7 @@ class RAGService:
         # 3. 重排与去重，随后组装来源与上下文
         sources, contexts = self._rank_chunks(query, candidates)
 
-        # 5. LLM 生成回答（使用原始问题，符合设计稿 7.2）
+        # 5. LLM 生成回答（使用原始问题）
         if not self._llm.available:
             answer = "LLM 未配置，仅返回检索到的相关片段，请查看引用来源。"
         else:
@@ -189,7 +189,7 @@ class RAGService:
         """按 RAG 阶段产生 SSE 负载，由 API 层负责编码为事件流。"""
         question = self._extract_question(messages)
 
-        yield _stage_event("cache", "正在读取FQA缓存")
+        yield _stage_event("cache", "正在读取 FAQ 缓存")
         cached = self._match_cache(question)
         if cached is not None:
             # 缓存命中时没有真实的 LLM 生成，但仍进入回答输出阶段，清除前端状态。
@@ -200,7 +200,7 @@ class RAGService:
             yield {"type": "done"}
             return
 
-        yield _stage_event("rewrite", "正在进行Query改写")
+        yield _stage_event("rewrite", "正在进行 Query 改写")
         rewritten = self._llm.rewrite_query(messages)
         query = rewritten or question
         if rewritten:

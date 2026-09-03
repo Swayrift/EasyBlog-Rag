@@ -18,7 +18,7 @@ from app.models.db_models import Chunk, Document, Post, PostTag, Tag
 from app.services.chunker import split_text
 from app.services.embedding import BaseEmbedder
 from app.services.markdown_parser import extract_first_heading, normalize_tags, parse_datetime, parse_markdown
-from app.services.milvus_store import VectorRecord, VectorStore
+from app.services.faiss_store import VectorRecord, VectorStore
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ def _delete_source_vectors(
     if not chunks:
         return
     if vector_store is not None:
-        vector_store.delete([int(chunk.milvus_id) for chunk in chunks if chunk.milvus_id])
+        vector_store.delete([int(chunk.id) for chunk in chunks if chunk.id is not None])
     for chunk in chunks:
         session.delete(chunk)
 
@@ -84,8 +84,6 @@ def _rebuild_chunks(
         chunk = Chunk(source_type=source_type, source_id=source_id, chunk_index=index, content=text)
         session.add(chunk)
         session.flush()
-        chunk.milvus_id = str(chunk.id)
-        session.add(chunk)
         vector_store.upsert(
             [
                 VectorRecord(
@@ -142,7 +140,8 @@ def _sync_post(
         tag = _get_or_create_tag(session, tag_name)
         session.add(PostTag(post_id=post.id, tag_id=tag.id))
 
-    if changed or not session.exec(
+    force_rebuild = vector_store is not None and embedder is not None and vector_store.needs_rebuild
+    if force_rebuild or changed or not session.exec(
         select(Chunk).where(Chunk.source_type == "post", Chunk.source_id == post.id).limit(1)
     ).first():
         _rebuild_chunks(vector_store, embedder, session, "post", post.id, post.title, body, settings)
@@ -175,7 +174,8 @@ def _sync_document(
     doc.title = title
     doc.file_hash = file_hash
 
-    if changed or not session.exec(
+    force_rebuild = vector_store is not None and embedder is not None and vector_store.needs_rebuild
+    if force_rebuild or changed or not session.exec(
         select(Chunk).where(Chunk.source_type == "document", Chunk.source_id == doc.id).limit(1)
     ).first():
         _rebuild_chunks(vector_store, embedder, session, "document", doc.id, doc.title, parsed.body, settings)
@@ -189,6 +189,15 @@ def sync_knowledge(
 ) -> None:
     # 即使向量服务不可用，也会完成 SQLite 元数据同步，仅跳过向量化。
     with Session(engine) as session:
+        if vector_store is not None and embedder is not None:
+            current_chunk_ids = [
+                int(chunk_id)
+                for chunk_id in session.exec(select(Chunk.id)).all()
+                if chunk_id is not None
+            ]
+            if not vector_store.has_ids(current_chunk_ids):
+                vector_store.mark_rebuild()
+
         # 文章
         seen_post_slugs: set[str] = set()
         if settings.posts_dir.exists():
