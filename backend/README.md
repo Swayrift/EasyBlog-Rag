@@ -52,7 +52,7 @@ python -m scripts.sync_knowledge
 | app | 站点标题、监听地址端口、CORS 允许来源 |
 | database / faiss | SQLite 与 FAISS 索引、清单文件路径、向量维度（1024） |
 | content | 文章、本地文档、关于我文件的位置 |
-| import | chunk 最小/最大字符数与语义边界相似度下降阈值、embedding 批大小与批间隔（免费档限流保护） |
+| import | Markdown 结构化切块的最小长度、软上限、硬上限，以及 embedding 批大小与批间隔（免费档限流保护） |
 | retrieval | 向量召回 top_k、重排保留 rerank_top_n、重排最低置信度 min_score |
 | qa_cache | 问答缓存：命中阈值 similarity_threshold、有效期 cache_ttl（秒）；服务启动时会清空已有缓存 |
 | siliconflow | API Key、模型名（BAAI/bge-m3、BAAI/bge-reranker-v2-m3） |

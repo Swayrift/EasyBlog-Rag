@@ -16,6 +16,8 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+_INDEX_SCHEMA_VERSION = 2
+
 
 @dataclass
 class VectorRecord:
@@ -90,12 +92,24 @@ class FaissVectorStore(VectorStore):
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._manifest_path.parent.mkdir(parents=True, exist_ok=True)
 
+        tmp_path = self._path.with_name(f"{self._path.name}.tmp")
+        if not self._path.exists() and tmp_path.exists():
+            # 上次进程可能在原子替换前退出，优先恢复完整的临时索引。
+            try:
+                os.replace(tmp_path, self._path)
+            except OSError:
+                logger.warning("无法恢复 FAISS 临时索引：%s", tmp_path)
+
         if self._path.exists():
             try:
                 self._index = faiss.read_index(str(self._path))
                 self._validate_index()
-                if not self._manifest_path.exists() or self._index.ntotal == 0:
+                if not self._manifest_path.exists():
                     self._needs_rebuild = True
+                else:
+                    manifest = json.loads(self._manifest_path.read_text(encoding="utf-8"))
+                    if manifest.get("schema_version") != _INDEX_SCHEMA_VERSION:
+                        self._needs_rebuild = True
             except Exception as exc:  # noqa: BLE001
                 logger.warning("FAISS 索引不可用，将在启动同步时重建：%s", exc)
                 self._index = self._new_index()
@@ -132,10 +146,14 @@ class FaissVectorStore(VectorStore):
 
     def has_ids(self, ids: list[int]) -> bool:
         with self._lock:
-            if len(ids) != self._index.ntotal:
+            if not ids:
+                return True
+            if self._index.ntotal == 0:
                 return False
             indexed_ids = self._faiss.vector_to_array(self._index.id_map)
-            return set(int(item) for item in indexed_ids) == set(int(item) for item in ids)
+            return set(int(item) for item in ids).issubset(
+                set(int(item) for item in indexed_ids)
+            )
 
     def upsert(self, records: list[VectorRecord]) -> None:
         if not records:
@@ -181,11 +199,11 @@ class FaissVectorStore(VectorStore):
                 return
             tmp_path = self._path.with_name(f"{self._path.name}.tmp")
             self._faiss.write_index(self._index, str(tmp_path))
-            with open(tmp_path, "rb") as handle:
+            with open(tmp_path, "r+b") as handle:
                 os.fsync(handle.fileno())
             os.replace(tmp_path, self._path)
             manifest = {
-                "schema_version": 1,
+                "schema_version": _INDEX_SCHEMA_VERSION,
                 "dimension": self._dim,
                 "metric": "IP",
                 "index_type": "IndexIDMap2(IndexFlatIP)",
@@ -197,7 +215,7 @@ class FaissVectorStore(VectorStore):
             manifest_tmp.write_text(
                 json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
             )
-            with open(manifest_tmp, "rb") as handle:
+            with open(manifest_tmp, "r+b") as handle:
                 os.fsync(handle.fileno())
             os.replace(manifest_tmp, self._manifest_path)
             self._dirty = False

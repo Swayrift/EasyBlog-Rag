@@ -38,7 +38,8 @@ class Settings:
 
     # [import]
     chunk_size: int = 600
-    similarity_drop: float = 0.15
+    chunk_min_size: int = 200
+    chunk_hard_size: int = 1200
     embedding_batch_size: int = 16
     batch_sleep: float = 0.5
 
@@ -101,7 +102,8 @@ def load_settings(config_path: Path | None = None) -> Settings:
         documents_dir=_resolve_path(get("content", "documents_dir", "../content/documents")),
         about_file=_resolve_path(get("content", "about_file", "../content/about.md")),
         chunk_size=parser.getint("import", "chunk_size", fallback=600),
-        similarity_drop=parser.getfloat("import", "similarity_drop", fallback=0.15),
+        chunk_min_size=parser.getint("import", "chunk_min_size", fallback=200),
+        chunk_hard_size=parser.getint("import", "chunk_hard_size", fallback=1200),
         embedding_batch_size=parser.getint("import", "embedding_batch_size", fallback=16),
         batch_sleep=parser.getfloat("import", "batch_sleep", fallback=0.5),
         top_k=parser.getint("retrieval", "top_k", fallback=10),

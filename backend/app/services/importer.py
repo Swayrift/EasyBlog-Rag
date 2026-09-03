@@ -73,8 +73,8 @@ def _rebuild_chunks(
     texts = split_text(
         body,
         settings.chunk_size,
-        embedder,
-        settings.similarity_drop,
+        settings.chunk_min_size,
+        settings.chunk_hard_size,
     )
     if not texts:
         return
@@ -104,6 +104,7 @@ def _sync_post(
     session: Session,
     path: Path,
     settings: Settings,
+    force_rebuild: bool = False,
 ) -> str:
     raw = path.read_bytes()
     file_hash = hashlib.sha256(raw).hexdigest()
@@ -140,10 +141,15 @@ def _sync_post(
         tag = _get_or_create_tag(session, tag_name)
         session.add(PostTag(post_id=post.id, tag_id=tag.id))
 
-    force_rebuild = vector_store is not None and embedder is not None and vector_store.needs_rebuild
-    if force_rebuild or changed or not session.exec(
-        select(Chunk).where(Chunk.source_type == "post", Chunk.source_id == post.id).limit(1)
-    ).first():
+    chunks = session.exec(
+        select(Chunk).where(Chunk.source_type == "post", Chunk.source_id == post.id)
+    ).all()
+    vectors_missing = (
+        vector_store is not None
+        and embedder is not None
+        and not vector_store.has_ids([int(chunk.id) for chunk in chunks if chunk.id is not None])
+    )
+    if force_rebuild or changed or not chunks or vectors_missing:
         _rebuild_chunks(vector_store, embedder, session, "post", post.id, post.title, body, settings)
     else:
         logger.debug("文章未变更，跳过：%s", slug)
@@ -158,6 +164,7 @@ def _sync_document(
     path: Path,
     rel_path: str,
     settings: Settings,
+    force_rebuild: bool = False,
 ) -> None:
     raw = path.read_bytes()
     file_hash = hashlib.sha256(raw).hexdigest()
@@ -174,10 +181,15 @@ def _sync_document(
     doc.title = title
     doc.file_hash = file_hash
 
-    force_rebuild = vector_store is not None and embedder is not None and vector_store.needs_rebuild
-    if force_rebuild or changed or not session.exec(
-        select(Chunk).where(Chunk.source_type == "document", Chunk.source_id == doc.id).limit(1)
-    ).first():
+    chunks = session.exec(
+        select(Chunk).where(Chunk.source_type == "document", Chunk.source_id == doc.id)
+    ).all()
+    vectors_missing = (
+        vector_store is not None
+        and embedder is not None
+        and not vector_store.has_ids([int(chunk.id) for chunk in chunks if chunk.id is not None])
+    )
+    if force_rebuild or changed or not chunks or vectors_missing:
         _rebuild_chunks(vector_store, embedder, session, "document", doc.id, doc.title, parsed.body, settings)
     else:
         logger.debug("文档未变更，跳过：%s", rel_path)
@@ -189,21 +201,14 @@ def sync_knowledge(
 ) -> None:
     # 即使向量服务不可用，也会完成 SQLite 元数据同步，仅跳过向量化。
     with Session(engine) as session:
-        if vector_store is not None and embedder is not None:
-            current_chunk_ids = [
-                int(chunk_id)
-                for chunk_id in session.exec(select(Chunk.id)).all()
-                if chunk_id is not None
-            ]
-            if not vector_store.has_ids(current_chunk_ids):
-                vector_store.mark_rebuild()
-
+        # 索引格式或切块策略升级时只触发一次全量重建，之后继续按文件哈希增量同步。
+        force_rebuild = vector_store is not None and embedder is not None and vector_store.needs_rebuild
         # 文章
         seen_post_slugs: set[str] = set()
         if settings.posts_dir.exists():
             for path in sorted(settings.posts_dir.rglob("*.md")):
                 try:
-                    slug = _sync_post(vector_store, embedder, session, path, settings)
+                    slug = _sync_post(vector_store, embedder, session, path, settings, force_rebuild)
                     seen_post_slugs.add(slug)
                 except Exception:  # noqa: BLE001
                     logger.exception("同步文章失败：%s", path)
@@ -223,7 +228,7 @@ def sync_knowledge(
             for path in sorted(settings.documents_dir.rglob("*.md")):
                 rel_path = path.relative_to(settings.documents_dir).as_posix()
                 try:
-                    _sync_document(vector_store, embedder, session, path, rel_path, settings)
+                    _sync_document(vector_store, embedder, session, path, rel_path, settings, force_rebuild)
                     seen_doc_paths.add(rel_path)
                 except Exception:  # noqa: BLE001
                     logger.exception("同步文档失败：%s", path)

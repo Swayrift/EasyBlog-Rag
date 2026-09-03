@@ -1,131 +1,185 @@
-"""正文切分：embedding 语义分块 + 最小/最大字符数约束。
+"""Markdown 结构化切块。
 
-按句号"。"与换行符（\n / \n\n）提取句子，用向量模型计算相邻句子的相似度：
-- 相邻句子相似度突然下降，且当前 chunk 已达到最低字符数时，认为话题发生切换，
-  此处切分为一个 chunk；
-- 无论是否遇到语义边界，chunk 累计超过最大字符数时按句子截止，
-  保留能容纳的最多句子，然后进入下一个 chunk。
-
-注：原 overlap 逻辑在新的按句子切分策略下不再适用，因此不再使用。
+切块只依据 Markdown 结构和长度规则，不调用 Embedding 计算语义边界。
+代码块、表格、列表和引用会作为结构块保留；只有超过硬上限时才按行拆分。
 """
 
 from __future__ import annotations
 
 import logging
-import math
 import re
-
-from app.services.embedding import BaseEmbedder
 
 logger = logging.getLogger(__name__)
 
-
-def _split_sentences(text: str) -> list[str]:
-    """按句号切分句子，句号保留在句末"""
-    sentences: list[str] = []
-    for piece in re.split(r'(?<=[。！？；!?;])', text):
-        sentence = re.sub(r"\s+", " ", piece).strip()
-        if sentence:
-            sentences.append(sentence)
-    return sentences
+_FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$")
+_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+.+?\s*#*\s*$")
 
 
-def _cosine_similarity(a: list[float], b: list[float]) -> float:
-    if len(a) != len(b):
-        raise ValueError("向量维度不一致，无法计算相似度")
-    dot = sum(x * y for x, y in zip(a, b))
-    norm_a = math.sqrt(sum(x * x for x in a))
-    norm_b = math.sqrt(sum(y * y for y in b))
-    if norm_a == 0 or norm_b == 0:
-        return 0.0
-    return max(-1.0, min(1.0, dot / (norm_a * norm_b)))
+def _parse_blocks(text: str) -> list[str]:
+    """按空行和围栏代码块解析 Markdown 结构块。"""
+    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    blocks: list[str] = []
+    current: list[str] = []
+    fence_char: str | None = None
+    fence_len = 0
 
+    def flush() -> None:
+        if current:
+            block = "\n".join(current).strip()
+            if block:
+                blocks.append(block)
+            current.clear()
 
-def _detect_boundaries(
-    sentences: list[str], embedder: BaseEmbedder, similarity_drop: float
-) -> set[int]:
-    """返回语义边界索引；索引 i 表示句子 i 与句子 i+1 之间需要切分。"""
-    vectors = embedder.embed(sentences)
-    similarities = [
-        _cosine_similarity(vectors[i], vectors[i + 1])
-        for i in range(len(sentences) - 1)
-    ]
-    boundaries: set[int] = set()
-    for i in range(1, len(similarities)):
-        if similarities[i] < similarities[i - 1] - similarity_drop:
-            boundaries.add(i)
-    return boundaries
-
-
-def _group_sentences(
-    sentences: list[str],
-    boundaries: set[int],
-    chunk_size: int,
-    min_chunk_size: int = 200
-) -> list[str]:
-    """按语义边界组装 chunk。"""
-    if chunk_size < min_chunk_size + 50:
-            raise ValueError("chunk_size 必须比 min_chunk_size 大50")
-    chunks: list[str] = []
-    current = ""
-    for index, sentence in enumerate(sentences):
-        if len(sentence) > chunk_size:
-            # 如果有神人文档一句话就超过了文档块的最大字符数，那直接按照最大字符数硬切
-            if current:
-                chunks.append(current.strip())
-                current = ""
-            for i in range(0, len(sentence), chunk_size):
-                sub = sentence[i:i+chunk_size].strip()
-                if sub:
-                    chunks.append(sub)
+    for line in lines:
+        fence = _FENCE_RE.match(line)
+        if fence_char is None:
+            if fence:
+                fence_char = fence.group(1)[0]
+                fence_len = len(fence.group(1))
+            elif not line.strip():
+                flush()
+                continue
+            current.append(line)
             continue
 
-        candidate = f"{current} {sentence}" if current else sentence
-        if current and len(candidate) > chunk_size:
-            if len(current) >= min_chunk_size:
-                # 如果加了新句子后超出最大分块大小，那将新句子推到下一个分块中
-                chunks.append(current.strip())
-                current = sentence
-            else:
-                # 如果当前分块不要新句子后，又太短，那还是要新句子吧
-                current = candidate
-        else:
-            current = candidate
+        current.append(line)
+        marker = line.lstrip()
+        if marker.startswith(fence_char * fence_len) and not marker.startswith(
+            fence_char * (fence_len + 1)
+        ):
+            fence_char = None
+            fence_len = 0
+            flush()
 
-        if current and index in boundaries and len(current) >= min_chunk_size:
-            # 要求 chunk_size 必须大于最低设定值，防止遇到大量散字符，chunk 过小
-            chunks.append(current.strip())
-            current = ""
-    if current.strip():
-        chunks.append(current.strip())
-    return [chunk for chunk in chunks if chunk]
+    flush()
+    return blocks
+
+
+def _join_headings(blocks: list[str]) -> list[str]:
+    """将单独的标题和其后的内容合并，避免标题脱离正文。"""
+    result: list[str] = []
+    index = 0
+    while index < len(blocks):
+        block = blocks[index]
+        if _HEADING_RE.fullmatch(block) and index + 1 < len(blocks):
+            result.append(f"{block}\n\n{blocks[index + 1]}")
+            index += 2
+        else:
+            result.append(block)
+            index += 1
+    return result
+
+
+def _split_oversized_block(block: str, hard_max_len: int) -> list[str]:
+    """拆分超长块，代码块拆分后仍保持成对围栏。"""
+    if len(block) <= hard_max_len:
+        return [block]
+
+    lines = block.splitlines()
+    fence = _FENCE_RE.match(lines[0]) if lines else None
+    is_fenced = bool(
+        fence
+        and len(lines) >= 2
+        and lines[-1].lstrip().startswith(fence.group(1)[0] * len(fence.group(1)))
+    )
+    if is_fenced:
+        opening = lines[0]
+        closing = lines[-1]
+        body_lines = lines[1:-1]
+        available = max(1, hard_max_len - len(opening) - len(closing) - 2)
+        parts: list[str] = []
+        current: list[str] = []
+        current_len = 0
+        for line in body_lines:
+            if len(line) > available:
+                if current:
+                    parts.append("\n".join([opening, *current, closing]))
+                    current = []
+                    current_len = 0
+                parts.extend(
+                    "\n".join([opening, line[i : i + available], closing])
+                    for i in range(0, len(line), available)
+                )
+                continue
+            extra = len(line) + (1 if current else 0)
+            if current and current_len + extra > available:
+                parts.append("\n".join([opening, *current, closing]))
+                current = []
+                current_len = 0
+            current.append(line)
+            current_len += extra
+        if current or not parts:
+            parts.append("\n".join([opening, *current, closing]))
+        return parts
+
+    parts: list[str] = []
+    current = []
+    current_len = 0
+    for line in lines:
+        if len(line) > hard_max_len:
+            if current:
+                parts.append("\n".join(current))
+                current = []
+                current_len = 0
+            parts.extend(
+                line[i : i + hard_max_len] for i in range(0, len(line), hard_max_len)
+            )
+            continue
+        extra = len(line) + (1 if current else 0)
+        if current and current_len + extra > hard_max_len:
+            parts.append("\n".join(current))
+            current = []
+            current_len = 0
+        current.append(line)
+        current_len += extra
+    if current:
+        parts.append("\n".join(current))
+    return [part.strip() for part in parts if part.strip()]
 
 
 def split_text(
     text: str,
     chunk_size: int = 600,
-    embedder: BaseEmbedder | None = None,
-    similarity_drop: float = 0.15,
+    min_chunk_size: int = 200,
+    hard_chunk_size: int | None = None,
 ) -> list[str]:
-    """语义分块：分句 + 相邻句子相似度突降切分（需达到最低长度）+ 最大长度兜底。
-
-    未提供 embedder 时退化为仅按 chunk_size 按句子切分；
-    语义边界计算失败时同样回退，保证文章仍可入库。
-    """
+    """按 Markdown 结构切分正文，不使用 Embedding 计算边界。"""
     if chunk_size <= 0:
         raise ValueError("chunk_size 必须为正数")
-    if similarity_drop < 0:
-        raise ValueError("similarity_drop 不能为负数")
+    if min_chunk_size < 0:
+        raise ValueError("min_chunk_size 不能为负数")
 
-    sentences = _split_sentences(text)
-    if not sentences:
+    hard_max_len = hard_chunk_size or max(chunk_size * 2, chunk_size)
+    if hard_max_len < chunk_size:
+        raise ValueError("hard_chunk_size 不能小于 chunk_size")
+    if min_chunk_size > hard_max_len:
+        raise ValueError("min_chunk_size 不能大于 hard_chunk_size")
+    if not text.strip():
         return []
 
-    boundaries: set[int] = set()
-    if embedder is not None:
-        try:
-            boundaries = _detect_boundaries(sentences, embedder, similarity_drop)
-        except Exception:  # noqa: BLE001
-            logger.warning("语义边界计算失败，回退为仅按 chunk_size 切分", exc_info=True)
+    blocks = _join_headings(_parse_blocks(text))
+    safe_blocks = [
+        part for block in blocks for part in _split_oversized_block(block, hard_max_len)
+    ]
 
-    return _group_sentences(sentences, boundaries, chunk_size)
+    chunks: list[str] = []
+    current = ""
+    for block in safe_blocks:
+        candidate = f"{current}\n\n{block}" if current else block
+        if not current or len(candidate) <= chunk_size:
+            current = candidate
+        elif len(current) < min_chunk_size and len(candidate) <= hard_max_len:
+            current = candidate
+        else:
+            chunks.append(current.strip())
+            current = block
+    if current.strip():
+        chunks.append(current.strip())
+
+    result = [chunk for chunk in chunks if chunk]
+    logger.debug(
+        "Markdown 结构化切块完成：输入 %d 字符，输出 %d 个 chunk",
+        len(text),
+        len(result),
+    )
+    return result
