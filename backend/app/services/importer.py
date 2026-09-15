@@ -2,7 +2,7 @@
 
 - 文章（content/posts）与文档（content/documents）均以文件哈希判断是否变更。
 - 已删除文件对应的记录与向量会被清理。
-- 每次后端启动时自动执行，也可单独运行 scripts/sync_knowledge.py。
+- 每次后端启动时自动执行。
 """
 
 from __future__ import annotations

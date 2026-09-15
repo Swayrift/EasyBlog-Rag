@@ -30,20 +30,16 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 # 3. 准备配置
-#    config.ini 已包含硅基流动密钥；如需问答生成回答，请在 [openai] 填入 api_key
+#    在 [siliconflow] 填入 api_key；如需生成回答，再在 [openai] 填入 api_key
 cp config.example.ini config.ini   # 如 config.ini 不存在
 
-# 4. 启动（启动时会自动执行知识导入）
+# 4. 启动（启动时会自动执行知识导入与增量同步）
 python -m app.main
 # 或
 uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-手动执行知识导入（不启动服务）：
-
-```bash
-python -m scripts.sync_knowledge
-```
+知识导入与增量同步只在服务启动时执行，没有独立的手动导入入口。改完 `../content/` 下的文件后，重启后端即可生效（未变更的文件按哈希跳过，不会重复消耗向量化）。
 
 ## 配置说明（config.ini）
 
@@ -54,7 +50,7 @@ python -m scripts.sync_knowledge
 | content | 文章、本地文档、关于我文件的位置 |
 | import | Markdown 结构化切块的最小长度、软上限、硬上限，以及 embedding 批大小与批间隔（免费档限流保护） |
 | retrieval | 向量召回 top_k、重排保留 rerank_top_n、重排最低置信度 min_score |
-| qa_cache | 问答缓存：命中阈值 similarity_threshold、有效期 cache_ttl（秒）；服务启动时会清空已有缓存 |
+| qa_cache | 问答缓存：命中阈值 similarity_threshold、有效期 cache_ttl（秒）；启动时载入未过期条目，过期条目在后续读取缓存时清理 |
 | siliconflow | API Key、模型名（BAAI/bge-m3、BAAI/bge-reranker-v2-m3） |
 | openai | OpenAI 兼容接口（当前配置为 DeepSeek）：base_url、API Key、模型、温度；api_key 留空则问答只返回检索片段 |
 
@@ -69,7 +65,7 @@ python -m scripts.sync_knowledge
 | GET | /api/posts/id/{post_id} | 按 ID 查文章，供问答引用来源跳转 |
 | GET | /api/tags | 标签列表（含已发布文章数） |
 | GET | /api/about | 关于我 |
-| POST | /api/chat | 知识库问答（OpenAI 兼容 messages 数组） |
+| POST | /api/chat | 知识库问答，SSE 流式返回（请求体为 OpenAI 兼容 messages 数组） |
 
 接口文档：启动后访问 `/docs`（Swagger UI）。
 
@@ -90,8 +86,8 @@ backend/
 │   ├── core/              # 配置、数据库、日志、应用上下文
 │   ├── models/            # SQLite 表模型（SQLModel）
 │   ├── schemas/           # 请求/响应模型（Pydantic）
-│   └── services/          # 硅基流动客户端、FAISS、导入器、RAG 编排
-├── scripts/sync_knowledge.py
+│   └── services/          # 硅基流动客户端、FAISS、导入器、问答缓存、RAG 编排
+├── data/                  # 运行期数据：blog.db、faiss/（不入库）
 ├── config.ini             # 实际配置（含密钥，不入库）
 ├── config.example.ini
 └── requirements.txt

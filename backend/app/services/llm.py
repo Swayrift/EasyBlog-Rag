@@ -10,7 +10,6 @@ from openai import OpenAI
 logger = logging.getLogger(__name__)
 
 REWRITE_SYSTEM_PROMPT = (
-    "你是一个嵌入在个人博客 + RAG 问答系统中的查询改写助手。\n"
     "请结合历史上下文，把当前问题改写为一个独立、完整、适合在知识库中检索的查询。\n"
     "改写建议：\n"
     "1. 如果你认为回答该问题需要检索一些代码或图表等含中文较少的内容，请编造一个假设性的、陈述性的回答来进行检索；\n"
